@@ -19,18 +19,24 @@
       </div>
       <a class="header-link" href="/admin">Administrare</a>
     </div>
+    <div class="hero-points">
+      <span>🌱 Recoltate în ziua livrării</span>
+      <span>🚚 Livrare la adresa dumneavoastră</span>
+      <span>📦 Cantități pentru restaurante și angro</span>
+      <span>📞 Confirmare telefonică</span>
+    </div>
   </header>
 
   <main>
     <div id="order-form-section">
-      <h2>🍅 Alegeți produsele</h2>
-      <p style="color: var(--muted); margin-top: -6px;">Introduceți cantitatea dorită pentru fiecare produs. Prețurile sunt afișate per unitate de măsură.</p>
+      <h2><span class="step">1</span> Alegeți produsele</h2>
+      <p class="section-hint">Introduceți cantitatea dorită pentru fiecare produs. Prețurile sunt afișate per unitate de măsură.</p>
       <div class="products" id="products"></div>
 
-      <h2>🧺 Sumarul comenzii</h2>
+      <h2><span class="step">2</span> Sumarul comenzii</h2>
       <div class="card summary" id="summary"></div>
 
-      <h2>🚚 Date de livrare</h2>
+      <h2 id="delivery-heading"><span class="step">3</span> Date de livrare</h2>
       <div class="card">
         <div class="form-grid">
           <div class="field">
@@ -40,6 +46,10 @@
           <div class="field">
             <label for="c-company">Denumirea firmei (opțional)</label>
             <input id="c-company" type="text" placeholder="ex: Restaurant La Bunica SRL">
+          </div>
+          <div class="field">
+            <label for="c-cui">CUI / CIF — pentru factură (opțional)</label>
+            <input id="c-cui" type="text" placeholder="ex: RO12345678">
           </div>
           <div class="field">
             <label for="c-type">Tip client</label>
@@ -96,6 +106,14 @@
       <button class="btn btn-primary" onclick="location.reload()">Plasează o comandă nouă</button>
     </div>
   </main>
+
+  <div class="cart-bar hidden" id="cart-bar">
+    <div class="info">
+      <span class="count" id="cart-bar-count"></span>
+      <span class="total" id="cart-bar-total"></span>
+    </div>
+    <button type="button" id="cart-bar-btn">Finalizează comanda ↓</button>
+  </div>
 
   <footer class="site">
     GranaFarm — seră de legume proaspete · Comenzi: luni–sâmbătă

@@ -24,7 +24,8 @@
   <main>
     <!-- Autentificare -->
     <div id="login-section" class="card login-box">
-      <h2 style="margin-top: 0;">🔒 Autentificare</h2>
+      <div class="lock">🔒</div>
+      <h2>Autentificare</h2>
       <div class="field">
         <label for="password">Parola de administrare</label>
         <input id="password" type="password" placeholder="Introduceți parola">
@@ -42,7 +43,7 @@
       <div id="orders"></div>
 
       <h2>🥕 Produse și prețuri</h2>
-      <p style="color: var(--muted); margin-top: -6px;">Modificați prețurile sau disponibilitatea, apoi apăsați „Salvează" pe rândul respectiv. Produsele marcate ca indisponibile nu apar pe pagina de comandă.</p>
+      <p class="section-hint">Modificați prețurile sau disponibilitatea, apoi apăsați „Salvează" pe rândul respectiv. Produsele marcate ca indisponibile nu apar pe pagina de comandă.</p>
       <div id="products-msg"></div>
       <div class="table-wrap card" style="padding: 0;">
         <table class="admin">
@@ -61,6 +62,73 @@
       <div class="actions">
         <button class="btn btn-ghost" id="add-product-btn">+ Adaugă produs nou</button>
         <button class="btn btn-ghost" id="refresh-btn">↻ Reîncarcă datele</button>
+      </div>
+
+      <h2>🧾 Facturi</h2>
+      <p class="section-hint">Facturile se emit din lista de comenzi (butonul „Emite factura" din detaliile comenzii). Prețurile includ TVA; factura defalcă baza de impozitare și TVA-ul conform cotei setate mai jos.</p>
+      <div id="invoices"></div>
+
+      <h2>📱 Notificări SMS</h2>
+      <p class="section-hint" id="sms-provider-hint"></p>
+      <div id="sms-log"></div>
+
+      <h2>🏢 Date firmă și facturare</h2>
+      <p class="section-hint">Aceste date apar pe facturile emise. Telefonul proprietarului primește un SMS la fiecare comandă nouă.</p>
+      <div class="card">
+        <div class="form-grid">
+          <div class="field">
+            <label for="s-companyName">Denumirea firmei <span class="req">*</span></label>
+            <input id="s-companyName" type="text" placeholder="ex: GranaFarm SRL">
+          </div>
+          <div class="field">
+            <label for="s-cui">CUI / CIF</label>
+            <input id="s-cui" type="text" placeholder="ex: RO12345678">
+          </div>
+          <div class="field">
+            <label for="s-regCom">Nr. Registrul Comerțului</label>
+            <input id="s-regCom" type="text" placeholder="ex: J12/345/2020">
+          </div>
+          <div class="field">
+            <label for="s-ownerPhone">Telefon proprietar (SMS comenzi noi)</label>
+            <input id="s-ownerPhone" type="tel" placeholder="ex: 0722 123 456">
+          </div>
+          <div class="field">
+            <label for="s-address">Adresa sediului</label>
+            <input id="s-address" type="text" placeholder="ex: Str. Serelor nr. 1">
+          </div>
+          <div class="field">
+            <label for="s-city">Localitate</label>
+            <input id="s-city" type="text" placeholder="ex: Cluj-Napoca">
+          </div>
+          <div class="field">
+            <label for="s-phone">Telefon firmă</label>
+            <input id="s-phone" type="tel" placeholder="ex: 0264 123 456">
+          </div>
+          <div class="field">
+            <label for="s-email">Email firmă</label>
+            <input id="s-email" type="email" placeholder="ex: contact@granafarm.ro">
+          </div>
+          <div class="field">
+            <label for="s-iban">IBAN</label>
+            <input id="s-iban" type="text" placeholder="ex: RO49AAAA1B31007593840000">
+          </div>
+          <div class="field">
+            <label for="s-bank">Banca</label>
+            <input id="s-bank" type="text" placeholder="ex: Banca Transilvania">
+          </div>
+          <div class="field">
+            <label for="s-invoiceSeries">Seria facturilor <span class="req">*</span></label>
+            <input id="s-invoiceSeries" type="text" placeholder="ex: GF">
+          </div>
+          <div class="field">
+            <label for="s-vatRate">Cota TVA (%) <span class="req">*</span></label>
+            <input id="s-vatRate" type="number" min="0" max="50" step="1" placeholder="ex: 11">
+          </div>
+        </div>
+        <div id="settings-msg"></div>
+        <div class="actions">
+          <button class="btn btn-primary" id="save-settings-btn">Salvează datele firmei</button>
+        </div>
       </div>
     </div>
   </main>

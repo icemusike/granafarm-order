@@ -8,8 +8,8 @@ Totul este în limba română.
 
 ### Pentru clienți — pagina principală (`/`)
 - Catalog de produse cu prețuri și unități de măsură (kg, bucată, legătură)
-- Alegerea cantității pentru fiecare produs, cu sumar și total calculat automat
-- Formular cu date de contact și livrare: nume, firmă, tip client, telefon, email, localitate, adresă de livrare, data dorită de livrare, observații
+- Alegerea cantității pentru fiecare produs, cu sumar și total calculat automat, plus bară de coș fixă cu totalul
+- Formular cu date de contact și livrare: nume, firmă, CUI (pentru factură), tip client, telefon, email, localitate, adresă de livrare, data dorită de livrare, observații
 - Confirmare cu număr de comandă după trimitere
 
 ### Pentru proprietar — panoul de administrare (`/admin`)
@@ -18,6 +18,29 @@ Totul este în limba română.
 - Lista comenzilor cu filtrare după status și detalii complete (produse, cantități, date de livrare, telefon apelabil)
 - Schimbarea statusului fiecărei comenzi: **Nouă → Confirmată → În livrare → Livrată** (sau Anulată)
 - Gestionarea catalogului: adăugare / modificare / ștergere produse, actualizare prețuri, marcarea produselor ca indisponibile
+- **Facturare**: emiterea facturii direct din comandă (serie și numerotare automată, defalcare bază de impozitare + TVA), listă cu toate facturile, printare / salvare ca PDF din browser
+- **Date firmă** configurabile din panou: denumire, CUI, Reg. Com., adresă, IBAN, seria facturilor, cota TVA
+- **Jurnal SMS** cu toate notificările trimise
+
+## Notificări SMS
+
+- **Comandă nouă** → SMS către proprietar (telefonul se setează în panoul de administrare, secțiunea „Date firmă")
+- **Comandă confirmată** → SMS către client, trimis automat (o singură dată) când schimbați statusul în „Confirmată"
+
+Trimiterea reală se face prin [Twilio](https://www.twilio.com). Fără credențiale, aplicația rulează în **mod simulat**: mesajele apar doar în jurnalul din panoul de administrare și în consolă — util pentru testare.
+
+```bash
+TWILIO_ACCOUNT_SID=ACxxxxxxxx \
+TWILIO_AUTH_TOKEN=xxxxxxxx \
+TWILIO_FROM=+40xxxxxxxxx \
+npm start
+```
+
+Numerele românești sunt normalizate automat la formatul internațional (07xx… → +407xx…).
+
+## Facturare
+
+Prețurile din catalog **includ TVA**. La emiterea facturii, aplicația defalcă automat baza de impozitare și TVA-ul conform cotei setate în „Date firmă" (implicit 11%). Facturile primesc serie + număr secvențial (ex. `GF-0001`), se pot deschide oricând din secțiunea „Facturi" și se printează sau se salvează ca PDF direct din browser.
 
 ## Instalare și pornire
 

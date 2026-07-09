@@ -5,6 +5,24 @@ const cart = new Map(); // productId -> cantitate
 
 const lei = (v) => v.toFixed(2).replace('.', ',') + ' lei';
 
+const PRODUCT_EMOJI = [
+  [/roșii|rosii|tomate/i, '🍅'],
+  [/castrave/i, '🥒'],
+  [/ardei iute/i, '🌶️'],
+  [/ardei/i, '🫑'],
+  [/vinete/i, '🍆'],
+  [/dovle/i, '🥒'],
+  [/salat|spanac|varz/i, '🥬'],
+  [/ceap/i, '🧅'],
+  [/usturoi/i, '🧄'],
+  [/morcov/i, '🥕'],
+  [/cartof/i, '🥔'],
+  [/ridichi|sfecl/i, '🌱'],
+  [/pătrunjel|patrunjel|mărar|marar|leuștean|leustean|busuioc|verdea/i, '🌿'],
+];
+
+const emojiFor = (name) => (PRODUCT_EMOJI.find(([re]) => re.test(name)) || [null, '🥗'])[1];
+
 async function init() {
   const res = await fetch('/api/products');
   products = await res.json();
@@ -19,16 +37,22 @@ async function init() {
 function renderProducts() {
   const el = document.getElementById('products');
   el.innerHTML = '';
-  for (const p of products) {
+  products.forEach((p, i) => {
     const card = document.createElement('div');
-    card.className = 'product';
+    card.className = 'product' + (cart.has(p.id) ? ' selected' : '');
+    card.style.animationDelay = Math.min(i * 30, 400) + 'ms';
     card.innerHTML = `
-      <div class="name">${esc(p.name)}</div>
-      <div class="price">${lei(p.price)} <span>/ ${esc(p.unit)}</span></div>
+      <div class="top">
+        <div class="emoji">${emojiFor(p.name)}</div>
+        <div>
+          <div class="name">${esc(p.name)}</div>
+          <span class="price">${lei(p.price)} <span>/ ${esc(p.unit)}</span></span>
+        </div>
+      </div>
       <div class="qty-row">
-        <button type="button" data-dec>−</button>
+        <button type="button" data-dec aria-label="Scade cantitatea">−</button>
         <input type="number" min="0" step="0.5" value="${cart.get(p.id) || ''}" placeholder="0">
-        <button type="button" data-inc>+</button>
+        <button type="button" data-inc aria-label="Crește cantitatea">+</button>
         <span class="unit">${esc(p.unit)}</span>
       </div>`;
 
@@ -37,6 +61,7 @@ function renderProducts() {
       q = Math.max(0, Math.round(q * 100) / 100);
       if (q > 0) cart.set(p.id, q); else cart.delete(p.id);
       input.value = q > 0 ? q : '';
+      card.classList.toggle('selected', q > 0);
       renderSummary();
     };
     card.querySelector('[data-dec]').onclick = () => setQty((cart.get(p.id) || 0) - 1);
@@ -44,13 +69,14 @@ function renderProducts() {
     input.oninput = () => setQty(Number(input.value) || 0);
 
     el.appendChild(card);
-  }
+  });
 }
 
 function renderSummary() {
   const el = document.getElementById('summary');
   if (cart.size === 0) {
-    el.innerHTML = '<div class="empty">Coșul este gol — alegeți produsele de mai sus.</div>';
+    el.innerHTML = '<div class="empty"><span class="big">🧺</span>Coșul este gol — alegeți produsele de mai sus.</div>';
+    updateCartBar(0, 0);
     return;
   }
   let total = 0;
@@ -61,7 +87,7 @@ function renderSummary() {
     const sub = p.price * qty;
     total += sub;
     rows += `<tr>
-      <td>${esc(p.name)}</td>
+      <td>${emojiFor(p.name)} ${esc(p.name)}</td>
       <td class="num">${qty} ${esc(p.unit)}</td>
       <td class="num">${lei(p.price)}</td>
       <td class="num">${lei(sub)}</td>
@@ -73,6 +99,20 @@ function renderSummary() {
       <tbody>${rows}</tbody>
       <tfoot><tr><td colspan="3">Total</td><td class="num">${lei(total)}</td></tr></tfoot>
     </table>`;
+  updateCartBar(cart.size, total);
+}
+
+function updateCartBar(count, total) {
+  const bar = document.getElementById('cart-bar');
+  const formVisible = !document.getElementById('order-form-section').classList.contains('hidden');
+  if (count === 0 || !formVisible) {
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.classList.remove('hidden');
+  document.getElementById('cart-bar-count').textContent =
+    count === 1 ? '1 produs în coș' : `${count} produse în coș`;
+  document.getElementById('cart-bar-total').textContent = lei(total);
 }
 
 async function submitOrder() {
@@ -83,6 +123,7 @@ async function submitOrder() {
   const customer = {
     name: val('c-name'),
     company: val('c-company'),
+    cui: val('c-cui'),
     type: val('c-type'),
     phone: val('c-phone'),
     email: val('c-email'),
@@ -106,6 +147,7 @@ async function submitOrder() {
       return;
     }
     document.getElementById('order-form-section').classList.add('hidden');
+    document.getElementById('cart-bar').classList.add('hidden');
     document.getElementById('conf-number').textContent = data.number;
     document.getElementById('conf-total').textContent = 'Valoare totală: ' + lei(data.total);
     document.getElementById('confirmation-section').classList.remove('hidden');
@@ -121,4 +163,6 @@ const val = (id) => document.getElementById(id).value.trim();
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 document.getElementById('submit-btn').onclick = submitOrder;
+document.getElementById('cart-bar-btn').onclick = () =>
+  document.getElementById('delivery-heading').scrollIntoView({ behavior: 'smooth' });
 init();
