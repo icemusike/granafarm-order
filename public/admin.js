@@ -317,6 +317,7 @@ function openInvoice(inv) {
       <div style="font-weight:700;">${esc(inv.seller.companyName)}</div>
       ${line('CUI', inv.seller.cui)}
       ${line('Reg. Com.', inv.seller.regCom)}
+      ${line('EUID', inv.seller.euid)}
       ${line('Adresa', [inv.seller.address, inv.seller.city].filter(Boolean).join(', '))}
       ${line('Telefon', inv.seller.phone)}
       ${line('Email', inv.seller.email)}
@@ -396,7 +397,7 @@ function renderSmsLog() {
 
 // --- setări firmă -----------------------------------------------------------------
 
-const SETTINGS_FIELDS = ['companyName', 'cui', 'regCom', 'ownerPhone', 'address', 'city', 'phone', 'email', 'iban', 'bank', 'invoiceSeries', 'vatRate'];
+const SETTINGS_FIELDS = ['companyName', 'cui', 'regCom', 'euid', 'ownerPhone', 'address', 'city', 'phone', 'email', 'iban', 'bank', 'invoiceSeries', 'vatRate'];
 
 function renderSettings() {
   for (const f of SETTINGS_FIELDS) {

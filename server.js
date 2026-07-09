@@ -49,20 +49,21 @@ const SEED_PRODUCTS = [
   { name: 'Spanac',          unit: 'kg',       price: 12.0, available: true },
 ];
 
-// Datele firmei — apar pe facturi; se completează din panoul de administrare.
+// Datele firmei — apar pe facturi; se pot modifica din panoul de administrare.
 const DEFAULT_SETTINGS = {
-  companyName: 'GranaFarm SRL',
-  cui: '',
-  regCom: '',
+  companyName: 'GRANA FARM SRL',
+  cui: '48892842',
+  regCom: 'J11/569/2023',
+  euid: 'ROONRC.J11/569/2023',
   address: '',
   city: '',
-  phone: '',
+  phone: '+40 728209980',
   email: '',
   iban: '',
   bank: '',
-  vatRate: 11,            // cota TVA (%) — prețurile din catalog includ TVA
+  vatRate: 11,                    // cota TVA (%) — prețurile din catalog includ TVA
   invoiceSeries: 'GF',
-  ownerPhone: '',         // primește SMS la fiecare comandă nouă
+  ownerPhone: '+40 728209980',    // primește SMS la fiecare comandă nouă
 };
 
 let db = null;
@@ -406,6 +407,7 @@ app.post('/api/admin/orders/:id/invoice', requireAdmin, (req, res) => {
       companyName: s.companyName,
       cui: s.cui,
       regCom: s.regCom,
+      euid: s.euid,
       address: s.address,
       city: s.city,
       phone: s.phone,
