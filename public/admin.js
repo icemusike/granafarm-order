@@ -273,6 +273,8 @@ function renderInvoices() {
 // Deschide factura într-o fereastră nouă, gata de printat / salvat ca PDF
 function openInvoice(inv) {
   const date = new Date(inv.issuedAt).toLocaleDateString('ro-RO', { dateStyle: 'long' });
+  // logo rezolvat față de pagina curentă (merge și pe server, și pe GitHub Pages sub-cale)
+  const logoUrl = new URL('logo.svg', location.href).href;
   const line = (label, value) => (value ? `<div><b>${label}:</b> ${esc(value)}</div>` : '');
   const html = `<!DOCTYPE html>
 <html lang="ro">
@@ -280,22 +282,27 @@ function openInvoice(inv) {
 <meta charset="UTF-8">
 <title>Factura ${esc(inv.number)}</title>
 <style>
-  body { font-family: 'Segoe UI', system-ui, sans-serif; color: #1e2b25; margin: 40px auto; max-width: 800px; padding: 0 20px; line-height: 1.5; }
-  h1 { font-size: 1.5rem; color: #1b4332; margin: 0; }
-  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #2d6a4f; padding-bottom: 16px; margin-bottom: 24px; }
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:wght@400;600;700&display=swap');
+  body { font-family: 'Open Sans', 'Segoe UI', system-ui, sans-serif; color: #22302A; margin: 40px auto; max-width: 800px; padding: 0 20px; line-height: 1.5; }
+  h1 { font-family: 'Poppins', sans-serif; font-size: 1.7rem; color: #22302A; margin: 0; letter-spacing: -0.5px; }
+  .brand-logo { height: 46px; width: auto; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #FFA726; padding-bottom: 18px; margin-bottom: 26px; }
   .meta { text-align: right; font-size: 0.95rem; }
+  .inv-no { font-family: 'Poppins', sans-serif; font-size: 1.05rem; font-weight: 700; color: #388E3C; margin-top: 6px; }
   .parties { display: flex; gap: 40px; margin-bottom: 28px; }
   .party { flex: 1; font-size: 0.92rem; }
-  .party h3 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: #64766c; margin: 0 0 8px; border-bottom: 1px solid #e0eae2; padding-bottom: 4px; }
+  .party h3 { font-family: 'Poppins', sans-serif; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7d74; margin: 0 0 8px; border-bottom: 2px solid #4CAF50; padding-bottom: 5px; }
+  .party .who { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 1rem; color: #22302A; }
   table { width: 100%; border-collapse: collapse; font-size: 0.93rem; margin-bottom: 20px; }
-  th { background: #f0faf2; color: #24543f; text-align: left; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; }
-  th, td { padding: 9px 10px; border-bottom: 1px solid #e0eae2; }
+  th { font-family: 'Poppins', sans-serif; background: #F5F7F6; color: #22302A; text-align: left; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  th, td { padding: 10px; border-bottom: 1px solid #e4eae7; }
   .num { text-align: right; white-space: nowrap; }
   .totals { margin-left: auto; width: 320px; font-size: 0.95rem; }
-  .totals div { display: flex; justify-content: space-between; padding: 5px 10px; }
-  .totals .grand { font-weight: 800; font-size: 1.15rem; color: #1b4332; border-top: 2px solid #2d6a4f; margin-top: 6px; padding-top: 10px; }
-  .foot { margin-top: 40px; font-size: 0.85rem; color: #64766c; display: flex; justify-content: space-between; gap: 40px; }
-  .print-btn { position: fixed; top: 16px; right: 16px; background: #2d6a4f; color: #fff; border: none; border-radius: 10px; padding: 12px 22px; font-size: 0.95rem; font-weight: 700; cursor: pointer; }
+  .totals div { display: flex; justify-content: space-between; padding: 6px 10px; }
+  .totals .grand { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 1.2rem; color: #388E3C; border-top: 2px solid #FFA726; margin-top: 6px; padding-top: 11px; }
+  .foot { margin-top: 44px; font-size: 0.85rem; color: #6b7d74; display: flex; justify-content: space-between; gap: 40px; }
+  .print-btn { position: fixed; top: 16px; right: 16px; background: #FFA726; color: #fff; border: none; border-radius: 10px; padding: 13px 24px; font-size: 0.95rem; font-weight: 700; font-family: 'Open Sans', sans-serif; cursor: pointer; box-shadow: 0 4px 14px rgba(255,167,38,0.4); }
+  .print-btn:hover { background: #FF9800; }
   @media print { .print-btn { display: none; } body { margin: 0 auto; } }
 </style>
 </head>
@@ -303,8 +310,9 @@ function openInvoice(inv) {
   <button class="print-btn" onclick="window.print()">🖨️ Printează / Salvează PDF</button>
   <div class="head">
     <div>
-      <h1>FACTURĂ</h1>
-      <div style="font-size:1.05rem; font-weight:700; margin-top:4px;">Seria și numărul: ${esc(inv.number)}</div>
+      <img class="brand-logo" src="${logoUrl}" alt="GranaFarm" onerror="this.style.display='none'">
+      <h1 style="margin-top:10px;">FACTURĂ</h1>
+      <div class="inv-no">Seria și numărul: ${esc(inv.number)}</div>
     </div>
     <div class="meta">
       <div><b>Data emiterii:</b> ${date}</div>
@@ -314,7 +322,7 @@ function openInvoice(inv) {
   <div class="parties">
     <div class="party">
       <h3>Furnizor</h3>
-      <div style="font-weight:700;">${esc(inv.seller.companyName)}</div>
+      <div class="who">${esc(inv.seller.companyName)}</div>
       ${line('CUI', inv.seller.cui)}
       ${line('Reg. Com.', inv.seller.regCom)}
       ${line('EUID', inv.seller.euid)}
@@ -326,7 +334,7 @@ function openInvoice(inv) {
     </div>
     <div class="party">
       <h3>Client</h3>
-      <div style="font-weight:700;">${esc(inv.buyer.name)}</div>
+      <div class="who">${esc(inv.buyer.name)}</div>
       ${inv.buyer.contact !== inv.buyer.name ? line('Persoană de contact', inv.buyer.contact) : ''}
       ${line('CUI', inv.buyer.cui)}
       ${line('Adresa', [inv.buyer.address, inv.buyer.city].filter(Boolean).join(', '))}
