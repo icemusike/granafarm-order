@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GranaFarm — Comandă legume proaspete</title>
+  <link rel="icon" href="/favicon.svg">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <div class="brand">
+        <div class="logo">🥬</div>
+        <div>
+          <h1>GranaFarm</h1>
+          <p>Legume proaspete direct din seră — pentru restaurante, magazine și angro</p>
+        </div>
+      </div>
+      <a class="header-link" href="/admin">Administrare</a>
+    </div>
+  </header>
+
+  <main>
+    <div id="order-form-section">
+      <h2>🍅 Alegeți produsele</h2>
+      <p style="color: var(--muted); margin-top: -6px;">Introduceți cantitatea dorită pentru fiecare produs. Prețurile sunt afișate per unitate de măsură.</p>
+      <div class="products" id="products"></div>
+
+      <h2>🧺 Sumarul comenzii</h2>
+      <div class="card summary" id="summary"></div>
+
+      <h2>🚚 Date de livrare</h2>
+      <div class="card">
+        <div class="form-grid">
+          <div class="field">
+            <label for="c-name">Nume și prenume / persoană de contact <span class="req">*</span></label>
+            <input id="c-name" type="text" placeholder="ex: Ion Popescu">
+          </div>
+          <div class="field">
+            <label for="c-company">Denumirea firmei (opțional)</label>
+            <input id="c-company" type="text" placeholder="ex: Restaurant La Bunica SRL">
+          </div>
+          <div class="field">
+            <label for="c-type">Tip client</label>
+            <select id="c-type">
+              <option value="restaurant">Restaurant</option>
+              <option value="magazin">Magazin alimentar</option>
+              <option value="angro">Angro / distribuitor</option>
+              <option value="persoana_fizica">Persoană fizică</option>
+              <option value="altul">Altul</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="c-phone">Telefon <span class="req">*</span></label>
+            <input id="c-phone" type="tel" placeholder="ex: 0722 123 456">
+          </div>
+          <div class="field">
+            <label for="c-email">Email (opțional)</label>
+            <input id="c-email" type="email" placeholder="ex: comenzi@restaurant.ro">
+          </div>
+          <div class="field">
+            <label for="c-delivery-date">Data dorită pentru livrare</label>
+            <input id="c-delivery-date" type="date">
+          </div>
+          <div class="field">
+            <label for="c-city">Localitate <span class="req">*</span></label>
+            <input id="c-city" type="text" placeholder="ex: Cluj-Napoca">
+          </div>
+          <div class="field">
+            <label for="c-address">Adresa de livrare <span class="req">*</span></label>
+            <input id="c-address" type="text" placeholder="ex: Str. Florilor nr. 10">
+          </div>
+          <div class="field full">
+            <label for="c-notes">Observații (opțional)</label>
+            <textarea id="c-notes" rows="3" placeholder="ex: Livrare înainte de ora 9:00, sunați la sosire"></textarea>
+          </div>
+        </div>
+
+        <div id="form-msg"></div>
+
+        <div class="actions">
+          <button class="btn btn-primary" id="submit-btn">Trimite comanda</button>
+          <span style="color: var(--muted); font-size: 0.87rem;">Vă vom contacta telefonic pentru confirmare.</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="confirmation-section" class="card confirmation hidden">
+      <div class="icon">✅</div>
+      <h2>Comanda a fost trimisă!</h2>
+      <p>Numărul comenzii dumneavoastră este:</p>
+      <p class="order-no" id="conf-number"></p>
+      <p id="conf-total"></p>
+      <p style="color: var(--muted);">Vă vom contacta în cel mai scurt timp pentru confirmare și detalii de livrare.</p>
+      <button class="btn btn-primary" onclick="location.reload()">Plasează o comandă nouă</button>
+    </div>
+  </main>
+
+  <footer class="site">
+    GranaFarm — seră de legume proaspete · Comenzi: luni–sâmbătă
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

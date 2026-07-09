@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GranaFarm — Administrare comenzi</title>
+  <link rel="icon" href="/favicon.svg">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <div class="brand">
+        <div class="logo">🥬</div>
+        <div>
+          <h1>GranaFarm — Administrare</h1>
+          <p>Gestionarea comenzilor și a catalogului de produse</p>
+        </div>
+      </div>
+      <a class="header-link" href="/">Pagina de comandă</a>
+    </div>
+  </header>
+
+  <main>
+    <!-- Autentificare -->
+    <div id="login-section" class="card login-box">
+      <h2 style="margin-top: 0;">🔒 Autentificare</h2>
+      <div class="field">
+        <label for="password">Parola de administrare</label>
+        <input id="password" type="password" placeholder="Introduceți parola">
+      </div>
+      <div id="login-msg"></div>
+      <button class="btn btn-primary" id="login-btn" style="width: 100%;">Intră în cont</button>
+    </div>
+
+    <!-- Panou -->
+    <div id="dashboard-section" class="hidden">
+      <div class="stats" id="stats"></div>
+
+      <h2>📋 Comenzi</h2>
+      <div class="toolbar" id="status-filter"></div>
+      <div id="orders"></div>
+
+      <h2>🥕 Produse și prețuri</h2>
+      <p style="color: var(--muted); margin-top: -6px;">Modificați prețurile sau disponibilitatea, apoi apăsați „Salvează" pe rândul respectiv. Produsele marcate ca indisponibile nu apar pe pagina de comandă.</p>
+      <div id="products-msg"></div>
+      <div class="table-wrap card" style="padding: 0;">
+        <table class="admin">
+          <thead>
+            <tr>
+              <th>Produs</th>
+              <th>Unitate</th>
+              <th class="num">Preț (lei)</th>
+              <th>Disponibil</th>
+              <th>Acțiuni</th>
+            </tr>
+          </thead>
+          <tbody id="products-body"></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" id="add-product-btn">+ Adaugă produs nou</button>
+        <button class="btn btn-ghost" id="refresh-btn">↻ Reîncarcă datele</button>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site">GranaFarm — panou de administrare</footer>
+
+  <script src="/admin.js"></script>
+</body>
+</html>
