@@ -2,7 +2,13 @@
 
 Aplicație web simplă prin care clienții (restaurante, magazine alimentare, distribuitori angro, persoane fizice) pot plasa comenzi de legume proaspete direct de la seră, iar proprietarul le poate gestiona dintr-un panou de administrare.
 
-Totul este în limba română.
+Totul este în limba română, optimizat pentru telefon și desktop.
+
+## 🔗 Demo online
+
+Versiunea demonstrativă rulează pe GitHub Pages: **https://icemusike.github.io/granafarm-order/**
+
+Demo-ul folosește aceeași interfață, dar datele (comenzi, produse, facturi) se salvează doar în browserul curent (`demo/demo-api.js` înlocuiește serverul cu localStorage). Pentru comenzi reale, partajate între clienți și administrator, instalați versiunea cu server de mai jos.
 
 ## Funcționalități
 
