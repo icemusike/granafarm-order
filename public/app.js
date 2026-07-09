@@ -30,6 +30,47 @@ const PRODUCT_EMOJI = [
 
 const emojiFor = (name) => (PRODUCT_EMOJI.find(([re]) => re.test(name)) || [null, '🥗'])[1];
 
+// --- profil client salvat (localStorage — pe acest telefon/computer) -----------
+
+const PROFILE_KEY = 'granafarm-customer-profile';
+const PROFILE_FIELDS = ['name', 'company', 'cui', 'type', 'phone', 'email', 'address', 'city'];
+
+function loadSavedProfile() {
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function applySavedProfile(profile) {
+  if (!profile) return;
+  for (const f of PROFILE_FIELDS) {
+    const el = document.getElementById('c-' + f);
+    if (el && profile[f]) el.value = profile[f];
+  }
+  const banner = document.getElementById('welcome-back');
+  const nameEl = document.getElementById('welcome-name');
+  nameEl.textContent = profile.name ? `, ${profile.name}` : '';
+  banner.classList.remove('hidden');
+}
+
+function saveProfile(customer) {
+  const profile = {};
+  for (const f of PROFILE_FIELDS) profile[f] = customer[f] || '';
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+}
+
+document.getElementById('clear-profile-btn').onclick = () => {
+  localStorage.removeItem(PROFILE_KEY);
+  document.getElementById('welcome-back').classList.add('hidden');
+  for (const f of PROFILE_FIELDS) {
+    const el = document.getElementById('c-' + f);
+    if (el && el.tagName !== 'SELECT') el.value = '';
+  }
+};
+
 async function init() {
   const res = await fetch('/api/products');
   products = await res.json();
@@ -39,6 +80,8 @@ async function init() {
   // data minimă de livrare: mâine
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
   document.getElementById('c-delivery-date').min = tomorrow.toISOString().slice(0, 10);
+
+  applySavedProfile(loadSavedProfile());
 }
 
 function renderProducts() {
@@ -160,6 +203,7 @@ async function submitOrder() {
     address: val('c-address'),
     deliveryDate: val('c-delivery-date'),
     notes: val('c-notes'),
+    marketingOptIn: document.getElementById('c-marketing').checked,
   };
   const items = [...cart].map(([productId, qty]) => ({ productId, qty }));
 
@@ -175,6 +219,12 @@ async function submitOrder() {
       msg.innerHTML = `<div class="msg msg-error">${esc(data.error || 'A apărut o eroare. Încercați din nou.')}</div>`;
       return;
     }
+    if (document.getElementById('c-remember').checked) {
+      saveProfile(customer);
+    } else {
+      localStorage.removeItem(PROFILE_KEY);
+    }
+
     document.getElementById('order-form-section').classList.add('hidden');
     document.getElementById('cart-bar').classList.add('hidden');
     document.getElementById('conf-number').textContent = data.number;

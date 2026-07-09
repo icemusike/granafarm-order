@@ -5,9 +5,12 @@
  *   - PostgreSQL în producție (setați DATABASE_URL) — durabil, cu backup
  *   - fișier JSON local pentru dezvoltare (fără DATABASE_URL)
  *
- * Notificări SMS (Twilio, opțional):
- *   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM
- * Fără aceste variabile, SMS-urile rulează în mod simulat (se scriu doar în jurnal).
+ * Notificări SMS (Twilio): configurabile din panou (Integrări) sau prin
+ * variabilele de mediu TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM
+ * (setările din panou au prioritate). Fără nimic configurat, SMS-urile
+ * rulează în mod simulat (se scriu doar în jurnal).
+ *
+ * Notificări Email (Postmark): configurabile din panou (Configurare).
  *
  * Securitate:
  *   ADMIN_PASSWORD — parola panoului de administrare (obligatorie în producție).
@@ -16,7 +19,7 @@
 const express = require('express');
 const path = require('path');
 const { createStorage } = require('./lib/storage');
-const { DEFAULT_SETTINGS, ORDER_STATUSES, CLIENT_TYPES } = require('./lib/seed');
+const { DEFAULT_SETTINGS, SETTINGS_SCHEMA, ORDER_STATUSES, CLIENT_TYPES } = require('./lib/seed');
 
 const PORT = process.env.PORT || 3000;
 const IS_PROD = Boolean(process.env.DATABASE_URL) || process.env.NODE_ENV === 'production';
@@ -30,10 +33,10 @@ if (IS_PROD && ADMIN_PASSWORD === DEFAULT_ADMIN_PASSWORD) {
   process.exit(1);
 }
 
-const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || '';
-const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
-const TWILIO_FROM = process.env.TWILIO_FROM || '';
-const SMS_ENABLED = Boolean(TWILIO_SID && TWILIO_TOKEN && TWILIO_FROM);
+// Twilio prin variabile de mediu — folosit doar dacă nu există configurare în panou (Integrări).
+const ENV_TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || '';
+const ENV_TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
+const ENV_TWILIO_FROM = process.env.TWILIO_FROM || '';
 
 const round2 = (v) => Math.round(Number(v) * 100) / 100;
 
@@ -57,18 +60,36 @@ function stripDiacritics(s) {
     .replace(/[țȚ]/g, 't').replace(/[șȘ]/g, 's');
 }
 
-async function sendSms(to, body, kind) {
-  const entry = { to: normalizePhone(to), kind, body: stripDiacritics(body), status: 'simulat' };
+// Config Twilio activă: setările din panou (Integrări) au prioritate față de variabilele de mediu.
+function getTwilioConfig(settings) {
+  const t = settings.twilio || {};
+  if (t.accountSid && t.authToken && t.fromNumber) {
+    return { sid: t.accountSid, token: t.authToken, from: t.fromNumber, source: 'settings' };
+  }
+  if (ENV_TWILIO_SID && ENV_TWILIO_TOKEN && ENV_TWILIO_FROM) {
+    return { sid: ENV_TWILIO_SID, token: ENV_TWILIO_TOKEN, from: ENV_TWILIO_FROM, source: 'env' };
+  }
+  return null;
+}
 
-  if (SMS_ENABLED) {
+function isPostmarkConfigured(settings) {
+  const p = settings.postmark || {};
+  return Boolean(p.enabled && p.apiToken && p.fromEmail);
+}
+
+async function sendSms(settings, to, body, kind) {
+  const entry = { to: normalizePhone(to), kind, body: stripDiacritics(body), status: 'simulat' };
+  const cfg = getTwilioConfig(settings);
+
+  if (cfg) {
     try {
-      const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`, {
+      const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${cfg.sid}/Messages.json`, {
         method: 'POST',
         headers: {
-          Authorization: 'Basic ' + Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString('base64'),
+          Authorization: 'Basic ' + Buffer.from(`${cfg.sid}:${cfg.token}`).toString('base64'),
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({ To: entry.to, From: TWILIO_FROM, Body: entry.body }),
+        body: new URLSearchParams({ To: entry.to, From: cfg.from, Body: entry.body }),
       });
       if (res.ok) {
         entry.status = 'trimis';
@@ -89,29 +110,141 @@ async function sendSms(to, body, kind) {
   return entry;
 }
 
+async function sendEmail(settings, { to, kind, subject, text }) {
+  const entry = { to, kind, subject, status: 'simulat' };
+
+  if (isPostmarkConfigured(settings)) {
+    const p = settings.postmark;
+    try {
+      const res = await fetch('https://api.postmarkapp.com/email', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-Postmark-Server-Token': p.apiToken,
+        },
+        body: JSON.stringify({
+          From: p.fromName ? `${p.fromName} <${p.fromEmail}>` : p.fromEmail,
+          To: to,
+          Subject: subject,
+          TextBody: text,
+          MessageStream: 'outbound',
+        }),
+      });
+      if (res.ok) {
+        entry.status = 'trimis';
+      } else {
+        const err = await res.json().catch(() => ({}));
+        entry.status = 'eroare';
+        entry.error = err.Message || `HTTP ${res.status}`;
+      }
+    } catch (e) {
+      entry.status = 'eroare';
+      entry.error = e.message;
+    }
+  } else {
+    console.log(`[Email simulat] catre ${to}: ${subject}`);
+  }
+
+  await storage.addEmail(entry);
+  return entry;
+}
+
+// Înlocuiește token-urile {number} {name} {company} {total} {city} {phone} {deliveryDate}
+// într-un șablon SMS configurabil din panou.
+function renderSmsTemplate(tpl, order) {
+  const company = order.customer.company ? ` (${order.customer.company})` : '';
+  const deliveryDate = order.customer.deliveryDate
+    ? ` Livrare estimata: ${order.customer.deliveryDate.split('-').reverse().join('.')}.`
+    : '';
+  return String(tpl || '')
+    .replace(/\{number\}/g, order.number)
+    .replace(/\{name\}/g, order.customer.name)
+    .replace(/\{company\}/g, company)
+    .replace(/\{total\}/g, order.total.toFixed(2))
+    .replace(/\{city\}/g, order.customer.city)
+    .replace(/\{phone\}/g, order.customer.phone)
+    .replace(/\{deliveryDate\}/g, deliveryDate);
+}
+
 async function notifyOwnerNewOrder(order) {
   const settings = await storage.getSettings();
-  if (!settings.ownerPhone) return;
-  const company = order.customer.company ? ` (${order.customer.company})` : '';
-  const body =
-    `GranaFarm: Comanda noua ${order.number} de la ${order.customer.name}${company}, ` +
-    `total ${order.total.toFixed(2)} lei, livrare in ${order.customer.city}. ` +
-    `Telefon client: ${order.customer.phone}`;
-  await sendSms(settings.ownerPhone, body, 'comanda_noua');
+  if (settings.ownerPhone) {
+    const body = renderSmsTemplate(settings.smsTemplates.ownerNewOrder, order);
+    await sendSms(settings, settings.ownerPhone, body, 'comanda_noua');
+  }
+  if (settings.ownerEmail) {
+    const company = order.customer.company ? ` (${order.customer.company})` : '';
+    const text =
+      `Comandă nouă ${order.number} de la ${order.customer.name}${company}.\n\n` +
+      `Total: ${order.total.toFixed(2)} lei\nLivrare în: ${order.customer.city}\n` +
+      `Telefon client: ${order.customer.phone}`;
+    await sendEmail(settings, { to: settings.ownerEmail, kind: 'comanda_noua', subject: `Comandă nouă ${order.number} — GranaFarm`, text });
+  }
 }
 
 async function notifyClientConfirmed(order) {
-  const delivery = order.customer.deliveryDate
-    ? ` Livrare estimata: ${order.customer.deliveryDate.split('-').reverse().join('.')}.`
-    : '';
-  const body =
-    `GranaFarm: Comanda dvs. ${order.number} in valoare de ${order.total.toFixed(2)} lei ` +
-    `a fost confirmata.${delivery} Va multumim!`;
-  await sendSms(order.customer.phone, body, 'confirmare');
+  const settings = await storage.getSettings();
+  const body = renderSmsTemplate(settings.smsTemplates.clientConfirmed, order);
+  await sendSms(settings, order.customer.phone, body, 'confirmare');
+  if (order.customer.email) {
+    const delivery = order.customer.deliveryDate
+      ? ` Livrare estimată: ${order.customer.deliveryDate.split('-').reverse().join('.')}.`
+      : '';
+    const text = `Comanda dvs. ${order.number} în valoare de ${order.total.toFixed(2)} lei a fost confirmată.${delivery} Vă mulțumim!`;
+    await sendEmail(settings, { to: order.customer.email, kind: 'confirmare', subject: `Comanda dvs. ${order.number} a fost confirmată — GranaFarm`, text });
+  }
 }
 
-// „Fire and forget" cu prindere de erori — SMS-ul nu trebuie să blocheze răspunsul.
-const fireSms = (p) => { p.catch((e) => console.error('SMS eroare:', e.message)); };
+// „Fire and forget" cu prindere de erori — notificările nu trebuie să blocheze răspunsul HTTP.
+const fireAndForget = (p) => { p.catch((e) => console.error('Notificare eroare:', e.message)); };
+
+// ---------------------------------------------------------------------------
+// Statistici — calcule de interval de timp
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 86400000;
+const startOfUTCDay = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+
+function computeRange(range, fromStr, toStr) {
+  const now = new Date();
+  const todayStart = startOfUTCDay(now);
+  const tomorrowStart = new Date(todayStart.getTime() + DAY_MS);
+
+  switch (range) {
+    case 'today':
+      return { start: todayStart, end: tomorrowStart };
+    case 'yesterday':
+      return { start: new Date(todayStart.getTime() - DAY_MS), end: todayStart };
+    case 'thisWeek': {
+      const dow = (now.getUTCDay() + 6) % 7; // 0 = luni
+      const start = new Date(todayStart.getTime() - dow * DAY_MS);
+      return { start, end: tomorrowStart };
+    }
+    case 'lastWeek': {
+      const dow = (now.getUTCDay() + 6) % 7;
+      const thisWeekStart = new Date(todayStart.getTime() - dow * DAY_MS);
+      return { start: new Date(thisWeekStart.getTime() - 7 * DAY_MS), end: thisWeekStart };
+    }
+    case 'thisMonth':
+      return { start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)), end: tomorrowStart };
+    case 'lastMonth':
+      return {
+        start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)),
+        end: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+      };
+    case 'allTime':
+      return { start: new Date(0), end: tomorrowStart };
+    case 'custom': {
+      const start = fromStr ? startOfUTCDay(new Date(fromStr + 'T00:00:00Z')) : new Date(0);
+      const endBase = toStr ? startOfUTCDay(new Date(toStr + 'T00:00:00Z')) : todayStart;
+      return { start, end: new Date(endBase.getTime() + DAY_MS) };
+    }
+    case 'last7':
+    default:
+      return { start: new Date(todayStart.getTime() - 6 * DAY_MS), end: tomorrowStart };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Aplicație
@@ -182,10 +315,11 @@ app.post('/api/orders', asyncRoute(async (req, res) => {
     city: String(customer.city).trim(),
     deliveryDate: String(customer.deliveryDate || '').trim(),
     notes: String(customer.notes || '').trim(),
+    marketingOptIn: Boolean(customer.marketingOptIn),
   };
 
   const order = await storage.createOrder({ customer: customerData, items: orderItems, total });
-  fireSms(notifyOwnerNewOrder(order));
+  fireAndForget(notifyOwnerNewOrder(order));
   res.status(201).json({ number: order.number, total: order.total });
 }));
 
@@ -210,7 +344,7 @@ app.patch('/api/admin/orders/:id', requireAdmin, asyncRoute(async (req, res) => 
   if (!ORDER_STATUSES.includes(status)) return res.status(400).json({ error: 'Status invalid.' });
   const result = await storage.setOrderStatus(req.params.id, status);
   if (!result) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
-  if (result.shouldSendConfirmation) fireSms(notifyClientConfirmed(result.order));
+  if (result.shouldSendConfirmation) fireAndForget(notifyClientConfirmed(result.order));
   res.json(result.order);
 }));
 
@@ -256,16 +390,34 @@ function parseProduct(body) {
   };
 }
 
+// Construiește răspunsul public pentru setări, cu statusul integrărilor (fără a ascunde
+// valorile — panoul de administrare este deja protejat integral prin ADMIN_PASSWORD).
+function buildSettingsResponse(settings) {
+  const twilioCfg = getTwilioConfig(settings);
+  return {
+    ...settings,
+    smsProvider: twilioCfg ? 'twilio' : 'simulat',
+    smsSource: twilioCfg ? twilioCfg.source : 'none',
+    emailProvider: isPostmarkConfigured(settings) ? 'postmark' : 'simulat',
+  };
+}
+
 app.get('/api/admin/settings', requireAdmin, asyncRoute(async (req, res) => {
-  res.json({ ...(await storage.getSettings()), smsProvider: SMS_ENABLED ? 'twilio' : 'simulat' });
+  res.json(buildSettingsResponse(await storage.getSettings()));
 }));
 
 app.put('/api/admin/settings', requireAdmin, asyncRoute(async (req, res) => {
   const body = req.body || {};
   const current = await storage.getSettings();
   const next = { ...current };
-  for (const key of Object.keys(DEFAULT_SETTINGS)) {
-    if (key in body) next[key] = key === 'vatRate' ? Number(body[key]) : String(body[key]).trim();
+  for (const [key, type] of Object.entries(SETTINGS_SCHEMA)) {
+    if (!(key in body)) continue;
+    if (type === 'number') next[key] = Number(body[key]);
+    else if (type === 'object') {
+      if (body[key] && typeof body[key] === 'object') next[key] = { ...current[key], ...body[key] };
+    } else {
+      next[key] = String(body[key]).trim();
+    }
   }
   if (!next.companyName) return res.status(400).json({ error: 'Denumirea firmei este obligatorie.' });
   if (!Number.isFinite(next.vatRate) || next.vatRate < 0 || next.vatRate > 50) {
@@ -273,7 +425,7 @@ app.put('/api/admin/settings', requireAdmin, asyncRoute(async (req, res) => {
   }
   if (!next.invoiceSeries) return res.status(400).json({ error: 'Seria facturilor este obligatorie.' });
   await storage.saveSettings(next);
-  res.json({ ...next, smsProvider: SMS_ENABLED ? 'twilio' : 'simulat' });
+  res.json(buildSettingsResponse(next));
 }));
 
 app.get('/api/admin/invoices', requireAdmin, asyncRoute(async (req, res) => {
@@ -316,7 +468,106 @@ app.post('/api/admin/orders/:id/invoice', requireAdmin, asyncRoute(async (req, r
 }));
 
 app.get('/api/admin/sms-log', requireAdmin, asyncRoute(async (req, res) => {
-  res.json({ provider: SMS_ENABLED ? 'twilio' : 'simulat', log: await storage.listSms() });
+  const settings = await storage.getSettings();
+  res.json({ provider: getTwilioConfig(settings) ? 'twilio' : 'simulat', log: await storage.listSms() });
+}));
+
+app.get('/api/admin/email-log', requireAdmin, asyncRoute(async (req, res) => {
+  const settings = await storage.getSettings();
+  res.json({ provider: isPostmarkConfigured(settings) ? 'postmark' : 'simulat', log: await storage.listEmail() });
+}));
+
+app.post('/api/admin/test-sms', requireAdmin, asyncRoute(async (req, res) => {
+  const settings = await storage.getSettings();
+  const to = (req.body && req.body.to) || settings.ownerPhone;
+  if (!to) return res.status(400).json({ error: 'Introduceți un număr de telefon pentru test.' });
+  const entry = await sendSms(settings, to, 'Acesta este un SMS de test trimis din panoul de administrare GranaFarm.', 'test');
+  if (entry.status === 'eroare') return res.status(502).json({ error: entry.error || 'Trimiterea SMS a eșuat.' });
+  res.json(entry);
+}));
+
+app.post('/api/admin/test-email', requireAdmin, asyncRoute(async (req, res) => {
+  const settings = await storage.getSettings();
+  const to = (req.body && req.body.to) || settings.ownerEmail;
+  if (!to) return res.status(400).json({ error: 'Introduceți o adresă de email pentru test.' });
+  const entry = await sendEmail(settings, {
+    to, kind: 'test', subject: 'Email de test — GranaFarm',
+    text: 'Acesta este un email de test trimis din panoul de administrare GranaFarm.',
+  });
+  if (entry.status === 'eroare') return res.status(502).json({ error: entry.error || 'Trimiterea email-ului a eșuat.' });
+  res.json(entry);
+}));
+
+// Export CSV al clienților care au bifat „Vreau să primesc oferte prin email"
+app.get('/api/admin/marketing-export', requireAdmin, asyncRoute(async (req, res) => {
+  const orders = await storage.listOrders();
+  const seen = new Map();
+  for (const o of orders) {
+    if (o.customer.marketingOptIn && o.customer.email) {
+      const key = o.customer.email.toLowerCase();
+      if (!seen.has(key)) {
+        seen.set(key, { email: o.customer.email, name: o.customer.name, company: o.customer.company || '' });
+      }
+    }
+  }
+  const esc = (s) => `"${String(s || '').replace(/"/g, '""')}"`;
+  const rows = [...seen.values()];
+  const csv = ['Email,Nume,Firma', ...rows.map((r) => [esc(r.email), esc(r.name), esc(r.company)].join(','))].join('\r\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="granafarm-clienti-marketing.csv"');
+  res.send('﻿' + csv);
+}));
+
+// Statistici cu interval de timp configurabil
+app.get('/api/admin/stats', requireAdmin, asyncRoute(async (req, res) => {
+  const { range = 'last7', from, to } = req.query;
+  const { start, end } = computeRange(String(range), from, to);
+  const orders = await storage.listOrders();
+
+  const now = new Date();
+  const todayStr = startOfUTCDay(now).toISOString().slice(0, 10);
+
+  const active = orders.filter((o) => o.status !== 'anulata');
+  const inRange = (o) => {
+    const t = new Date(o.createdAt).getTime();
+    return t >= start.getTime() && t < end.getTime();
+  };
+  const rangeOrders = active.filter(inRange);
+
+  const totalOrders = rangeOrders.length;
+  const totalRevenue = round2(rangeOrders.reduce((s, o) => s + o.total, 0));
+  const ordersToday = active.filter((o) => o.createdAt.slice(0, 10) === todayStr).length;
+  const ordersDue = orders.filter((o) =>
+    ['noua', 'confirmata', 'in_livrare'].includes(o.status) &&
+    o.customer.deliveryDate && o.customer.deliveryDate <= todayStr
+  ).length;
+
+  // serie zilnică pentru grafic — limitată la ultimele 90 de zile ale intervalului
+  const spanDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY_MS));
+  const cappedDays = Math.min(spanDays, 90);
+  const seriesStart = new Date(end.getTime() - cappedDays * DAY_MS);
+  const series = [];
+  for (let i = 0; i < cappedDays; i++) {
+    const dayStart = new Date(seriesStart.getTime() + i * DAY_MS);
+    const dayEnd = new Date(dayStart.getTime() + DAY_MS);
+    const dOrders = active.filter((o) => {
+      const t = new Date(o.createdAt).getTime();
+      return t >= dayStart.getTime() && t < dayEnd.getTime();
+    });
+    series.push({
+      date: dayStart.toISOString().slice(0, 10),
+      count: dOrders.length,
+      revenue: round2(dOrders.reduce((s, o) => s + o.total, 0)),
+    });
+  }
+
+  res.json({
+    range, totalOrders, totalRevenue, ordersToday, ordersDue,
+    from: start.toISOString().slice(0, 10),
+    to: new Date(end.getTime() - DAY_MS).toISOString().slice(0, 10),
+    seriesCapped: cappedDays < spanDays,
+    series,
+  });
 }));
 
 app.get('/admin', (req, res) => {
@@ -329,11 +580,13 @@ app.get('/admin', (req, res) => {
 
 async function start() {
   await storage.init();
+  const settings = await storage.getSettings();
   app.listen(PORT, () => {
     console.log(`GranaFarm rulează pe http://localhost:${PORT}`);
     console.log(`Panou administrare: http://localhost:${PORT}/admin`);
     console.log(`Stocare: ${storage.kind === 'postgres' ? 'PostgreSQL (producție)' : 'fișier JSON (dezvoltare)'}`);
-    console.log(`SMS: ${SMS_ENABLED ? 'Twilio activ' : 'mod simulat'}`);
+    console.log(`SMS: ${getTwilioConfig(settings) ? 'Twilio activ' : 'mod simulat'}`);
+    console.log(`Email: ${isPostmarkConfigured(settings) ? 'Postmark activ' : 'mod simulat'}`);
   });
 }
 

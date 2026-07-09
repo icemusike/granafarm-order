@@ -16,17 +16,35 @@ const TYPE_LABELS = {
   altul: 'Altul',
 };
 
+const RANGE_OPTIONS = [
+  { key: 'last7', label: 'Ultimele 7 zile' },
+  { key: 'today', label: 'Azi' },
+  { key: 'yesterday', label: 'Ieri' },
+  { key: 'thisWeek', label: 'Săptămâna aceasta' },
+  { key: 'lastWeek', label: 'Săptămâna trecută' },
+  { key: 'thisMonth', label: 'Luna aceasta' },
+  { key: 'lastMonth', label: 'Luna trecută' },
+  { key: 'allTime', label: 'Tot timpul' },
+  { key: 'custom', label: 'Interval personalizat' },
+];
+
 let password = sessionStorage.getItem('gf-admin-pass') || '';
 let orders = [];
 let products = [];
 let invoices = [];
 let settings = {};
 let smsInfo = { provider: 'simulat', log: [] };
+let emailInfo = { provider: 'simulat', log: [] };
 let activeFilter = 'toate';
+let activeRange = 'last7';
+let customFrom = '';
+let customTo = '';
+let statsLoadedOnce = false;
 const expanded = new Set();
 
 const lei = (v) => v.toFixed(2).replace('.', ',') + ' lei';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ro = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('ro-RO', { dateStyle: 'medium' });
 
 function api(path, options = {}) {
   return fetch(path, {
@@ -62,15 +80,18 @@ async function showDashboard() {
   document.getElementById('login-section').classList.add('hidden');
   document.getElementById('dashboard-section').classList.remove('hidden');
   await loadAll();
+  renderRangeBar();
+  showSection(location.hash.slice(1) || 'comenzi');
 }
 
 async function loadAll() {
-  const [ordRes, prodRes, invRes, setRes, smsRes] = await Promise.all([
+  const [ordRes, prodRes, invRes, setRes, smsRes, emailRes] = await Promise.all([
     api('/api/admin/orders'),
     api('/api/admin/products'),
     api('/api/admin/invoices'),
     api('/api/admin/settings'),
     api('/api/admin/sms-log'),
+    api('/api/admin/email-log'),
   ]);
   if (!ordRes.ok) {
     // sesiune expirată / parolă schimbată
@@ -83,30 +104,137 @@ async function loadAll() {
   invoices = await invRes.json();
   settings = await setRes.json();
   smsInfo = await smsRes.json();
-  renderStats();
+  emailInfo = await emailRes.json();
+  renderNavBadge();
   renderFilter();
   renderOrders();
   renderProducts();
   renderInvoices();
   renderSmsLog();
+  renderEmailLog();
   renderSettings();
+  renderMarketingCount();
+}
+
+// --- navigare / rutare ---------------------------------------------------------
+
+const SECTIONS = ['comenzi', 'statistici', 'produse', 'facturi', 'configurare', 'integrari'];
+
+function showSection(name) {
+  if (!SECTIONS.includes(name)) name = 'comenzi';
+  SECTIONS.forEach((s) => document.getElementById('section-' + s).classList.toggle('hidden', s !== name));
+  document.querySelectorAll('.nav-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.section === name));
+  if (location.hash.slice(1) !== name) location.hash = name;
+  if (name === 'statistici' && !statsLoadedOnce) {
+    statsLoadedOnce = true;
+    loadStats();
+  }
+}
+
+function renderNavBadge() {
+  const newCount = orders.filter((o) => o.status === 'noua').length;
+  const el = document.getElementById('nav-orders-count');
+  if (newCount > 0) {
+    el.textContent = newCount;
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
 }
 
 // --- statistici ---------------------------------------------------------------
 
-function renderStats() {
-  const today = new Date().toISOString().slice(0, 10);
-  const active = orders.filter((o) => o.status !== 'anulata');
-  const newCount = orders.filter((o) => o.status === 'noua').length;
-  const todayCount = orders.filter((o) => o.createdAt.slice(0, 10) === today).length;
-  const totalValue = active.filter((o) => o.status !== 'livrata').reduce((s, o) => s + o.total, 0);
-
-  document.getElementById('stats').innerHTML = `
-    <div class="stat accent-amber"><div class="icon">🔔</div><div><div class="label">Comenzi noi</div><div class="value">${newCount}</div></div></div>
-    <div class="stat accent-blue"><div class="icon">📥</div><div><div class="label">Comenzi primite azi</div><div class="value">${todayCount}</div></div></div>
-    <div class="stat"><div class="icon">💰</div><div><div class="label">Valoare comenzi în lucru</div><div class="value">${lei(totalValue)}</div></div></div>
-    <div class="stat accent-plum"><div class="icon">📊</div><div><div class="label">Total comenzi</div><div class="value">${orders.length}</div></div></div>`;
+function renderRangeBar() {
+  document.getElementById('range-bar').innerHTML = RANGE_OPTIONS.map(
+    (r) => `<button class="chip ${activeRange === r.key ? 'active' : ''}" data-range="${r.key}">${r.label}</button>`
+  ).join('');
+  document.querySelectorAll('#range-bar .chip').forEach((btn) => {
+    btn.onclick = () => {
+      activeRange = btn.dataset.range;
+      renderRangeBar();
+      document.getElementById('custom-range').classList.toggle('active', activeRange === 'custom');
+      if (activeRange === 'custom') {
+        if (customFrom && customTo) loadStats();
+        return;
+      }
+      loadStats();
+    };
+  });
 }
+
+async function loadStats() {
+  let url = `/api/admin/stats?range=${encodeURIComponent(activeRange)}`;
+  if (activeRange === 'custom') {
+    if (!customFrom || !customTo) return;
+    url += `&from=${customFrom}&to=${customTo}`;
+  }
+  const res = await api(url);
+  if (!res.ok) return;
+  const stats = await res.json();
+  renderStatsCards(stats);
+  renderCharts(stats);
+}
+
+function renderStatsCards(stats) {
+  document.getElementById('stats-period-hint').textContent = `Interval: ${ro(stats.from)} – ${ro(stats.to)}`;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat accent-blue"><div class="icon">📦</div><div><div class="label">Comenzi în perioadă</div><div class="value">${stats.totalOrders}</div></div></div>
+    <div class="stat"><div class="icon">💰</div><div><div class="label">Valoare în perioadă</div><div class="value">${lei(stats.totalRevenue)}</div></div></div>
+    <div class="stat accent-amber"><div class="icon">📥</div><div><div class="label">Comenzi azi</div><div class="value">${stats.ordersToday}</div></div></div>
+    <div class="stat accent-plum"><div class="icon">⏰</div><div><div class="label">Comenzi scadente</div><div class="value">${stats.ordersDue}</div></div></div>`;
+}
+
+function renderCharts(stats) {
+  document.getElementById('chart-orders').innerHTML = buildBarChart(stats.series, {
+    valueKey: 'count', color: 'var(--green)', format: (v) => String(v),
+  });
+  document.getElementById('chart-revenue').innerHTML = buildBarChart(stats.series, {
+    valueKey: 'revenue', color: 'var(--gold)', format: (v) => (v % 1 === 0 ? String(v) : v.toFixed(1).replace('.', ',')),
+  });
+}
+
+// Grafic simplu cu bare, în SVG (fără dependințe externe). Coordonatele sunt
+// procentuale (viewBox 100×40) ca să se întindă pe toată lățimea cardului.
+function buildBarChart(series, { valueKey, color, format }) {
+  if (!series || series.length === 0) return '<div class="chart-empty">Fără date pentru acest interval.</div>';
+
+  const W = 100, H = 40;
+  const padL = 1, padR = 1, padT = 4, padB = 7;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const maxVal = Math.max(1, ...series.map((d) => d[valueKey]));
+  const n = series.length;
+  const gap = plotW / n;
+  const barW = Math.min(gap * 0.62, gap - 0.3);
+  const labelEvery = Math.max(1, Math.ceil(n / 8));
+  const showValues = n <= 12;
+
+  let bars = '';
+  let labels = '';
+  series.forEach((d, i) => {
+    const x = padL + i * gap + (gap - barW) / 2;
+    const val = d[valueKey];
+    const barH = val > 0 ? Math.max(H * 0.02, (val / maxVal) * plotH) : 0;
+    const y = padT + (plotH - barH);
+    const dLbl = new Date(d.date + 'T00:00:00').toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit' });
+    bars += `<rect class="bar" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${barW.toFixed(2)}" height="${barH.toFixed(2)}" rx="0.6" fill="${color}"><title>${dLbl}: ${format(val)}</title></rect>`;
+    if (showValues && val > 0) {
+      labels += `<text class="bar-value" x="${(x + barW / 2).toFixed(2)}" y="${(y - 1).toFixed(2)}" text-anchor="middle">${format(val)}</text>`;
+    }
+    if (i % labelEvery === 0 || i === n - 1) {
+      labels += `<text class="axis-label" x="${(x + barW / 2).toFixed(2)}" y="${(H - 1.5).toFixed(2)}" text-anchor="middle">${dLbl}</text>`;
+    }
+  });
+  const baseline = `<line class="grid-line" x1="${padL}" y1="${(padT + plotH).toFixed(2)}" x2="${(W - padR).toFixed(2)}" y2="${(padT + plotH).toFixed(2)}"/>`;
+  return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}">${baseline}${bars}${labels}</svg>`;
+}
+
+document.getElementById('range-apply').onclick = () => {
+  customFrom = document.getElementById('range-from').value;
+  customTo = document.getElementById('range-to').value;
+  if (!customFrom || !customTo) return;
+  loadStats();
+};
 
 // --- comenzi -------------------------------------------------------------------
 
@@ -179,6 +307,7 @@ function renderOrders() {
           <div class="detail-line"><b>Adresă:</b> ${esc(o.customer.address)}, ${esc(o.customer.city)}</div>
           ${o.customer.deliveryDate ? `<div class="detail-line"><b>Livrare dorită:</b> ${new Date(o.customer.deliveryDate + 'T00:00:00').toLocaleDateString('ro-RO', { dateStyle: 'long' })}</div>` : ''}
           ${o.customer.notes ? `<div class="detail-line"><b>Observații:</b> ${esc(o.customer.notes)}</div>` : ''}
+          ${o.customer.marketingOptIn ? `<div class="detail-line">📣 Abonat la oferte prin email</div>` : ''}
         </div>
         <div class="status-row">
           <b>Schimbă statusul:</b>
@@ -204,11 +333,13 @@ function renderOrders() {
       });
       if (res.ok) {
         Object.assign(o, await res.json());
-        renderStats();
+        renderNavBadge();
         renderFilter();
         renderOrders();
-        // confirmarea poate genera un SMS către client
+        if (statsLoadedOnce && !document.getElementById('section-statistici').classList.contains('hidden')) loadStats();
+        // confirmarea poate genera un SMS/email către client
         api('/api/admin/sms-log').then((r) => r.json()).then((d) => { smsInfo = d; renderSmsLog(); });
+        api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
       }
     };
 
@@ -370,16 +501,16 @@ function openInvoice(inv) {
   win.document.close();
 }
 
-// --- jurnal SMS ------------------------------------------------------------------
+// --- jurnal SMS / email ------------------------------------------------------------------
 
-const SMS_KIND_LABELS = { comanda_noua: 'Comandă nouă → proprietar', confirmare: 'Confirmare → client' };
-const SMS_STATUS_BADGE = { trimis: 'badge-livrata', simulat: 'badge-confirmata', eroare: 'badge-anulata' };
+const SMS_KIND_LABELS = { comanda_noua: 'Comandă nouă → proprietar', confirmare: 'Confirmare → client', test: 'Test' };
+const STATUS_BADGE = { trimis: 'badge-livrata', simulat: 'badge-confirmata', eroare: 'badge-anulata' };
 
 function renderSmsLog() {
   document.getElementById('sms-provider-hint').innerHTML =
     smsInfo.provider === 'twilio'
       ? 'Trimiterea SMS este <b>activă</b> prin Twilio. La fiecare comandă nouă primiți SMS pe telefonul proprietarului, iar clientul primește SMS când confirmați comanda.'
-      : 'SMS-urile rulează în <b>mod simulat</b> (se înregistrează doar în jurnalul de mai jos). Pentru trimitere reală, setați variabilele de mediu <code>TWILIO_ACCOUNT_SID</code>, <code>TWILIO_AUTH_TOKEN</code> și <code>TWILIO_FROM</code> la pornirea serverului.';
+      : 'SMS-urile rulează în <b>mod simulat</b> (se înregistrează doar în jurnalul de mai jos). Configurați Twilio în secțiunea de mai sus pentru trimitere reală.';
 
   const el = document.getElementById('sms-log');
   if (smsInfo.log.length === 0) {
@@ -395,7 +526,7 @@ function renderSmsLog() {
             <td style="white-space:nowrap;">${new Date(s.at).toLocaleString('ro-RO', { dateStyle: 'short', timeStyle: 'short' })}</td>
             <td style="white-space:nowrap;">${esc(s.to)}</td>
             <td>${SMS_KIND_LABELS[s.kind] || esc(s.kind)}</td>
-            <td><span class="badge ${SMS_STATUS_BADGE[s.status] || ''}">${esc(s.status)}${s.error ? ' — ' + esc(s.error) : ''}</span></td>
+            <td><span class="badge ${STATUS_BADGE[s.status] || ''}">${esc(s.status)}${s.error ? ' — ' + esc(s.error) : ''}</span></td>
             <td style="max-width:420px;">${esc(s.body)}</td>
           </tr>`).join('')}
         </tbody>
@@ -403,32 +534,185 @@ function renderSmsLog() {
     </div>`;
 }
 
-// --- setări firmă -----------------------------------------------------------------
+function renderEmailLog() {
+  document.getElementById('email-provider-hint').innerHTML =
+    emailInfo.provider === 'postmark'
+      ? 'Trimiterea de email-uri este <b>activă</b> prin Postmark.'
+      : 'Email-urile rulează în <b>mod simulat</b> (se înregistrează doar în jurnalul de mai jos). Activați Postmark mai sus pentru trimitere reală.';
 
-const SETTINGS_FIELDS = ['companyName', 'cui', 'regCom', 'euid', 'ownerPhone', 'address', 'city', 'phone', 'email', 'iban', 'bank', 'invoiceSeries', 'vatRate'];
+  const el = document.getElementById('email-log');
+  if (emailInfo.log.length === 0) {
+    el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Niciun email înregistrat încă.</div>';
+    return;
+  }
+  el.innerHTML = `
+    <div class="table-wrap card" style="padding:0;">
+      <table class="admin">
+        <thead><tr><th>Data</th><th>Către</th><th>Tip</th><th>Status</th><th>Subiect</th></tr></thead>
+        <tbody>
+          ${emailInfo.log.slice(0, 20).map((s) => `<tr>
+            <td style="white-space:nowrap;">${new Date(s.at).toLocaleString('ro-RO', { dateStyle: 'short', timeStyle: 'short' })}</td>
+            <td style="white-space:nowrap;">${esc(s.to)}</td>
+            <td>${SMS_KIND_LABELS[s.kind] || esc(s.kind)}</td>
+            <td><span class="badge ${STATUS_BADGE[s.status] || ''}">${esc(s.status)}${s.error ? ' — ' + esc(s.error) : ''}</span></td>
+            <td style="max-width:420px;">${esc(s.subject)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// --- setări: date firmă / postmark / marketing / șabloane / twilio ----------------
+
+const SETTINGS_FIELDS = ['companyName', 'cui', 'regCom', 'euid', 'ownerPhone', 'ownerEmail', 'address', 'city', 'phone', 'email', 'iban', 'bank', 'invoiceSeries', 'vatRate'];
+
+function setStatusPill(id, active) {
+  const el = document.getElementById(id);
+  el.textContent = active ? 'Activ' : 'Inactiv';
+  el.className = 'status-pill ' + (active ? 'on' : 'off');
+}
 
 function renderSettings() {
   for (const f of SETTINGS_FIELDS) {
     const input = document.getElementById('s-' + f);
     if (input) input.value = settings[f] ?? '';
   }
+
+  const pm = settings.postmark || {};
+  document.getElementById('pm-enabled').checked = Boolean(pm.enabled);
+  document.getElementById('pm-apiToken').value = pm.apiToken || '';
+  document.getElementById('pm-fromEmail').value = pm.fromEmail || '';
+  document.getElementById('pm-fromName').value = pm.fromName || '';
+  setStatusPill('postmark-status', settings.emailProvider === 'postmark');
+
+  document.getElementById('mk-enabled').checked = Boolean((settings.marketing || {}).enabled);
+
+  const tpl = settings.smsTemplates || {};
+  document.getElementById('tpl-ownerNewOrder').value = tpl.ownerNewOrder || '';
+  document.getElementById('tpl-clientConfirmed').value = tpl.clientConfirmed || '';
+
+  const tw = settings.twilio || {};
+  document.getElementById('tw-accountSid').value = tw.accountSid || '';
+  document.getElementById('tw-authToken').value = tw.authToken || '';
+  document.getElementById('tw-fromNumber').value = tw.fromNumber || '';
+  setStatusPill('twilio-status', settings.smsProvider === 'twilio');
+  document.getElementById('twilio-source-hint').innerHTML =
+    settings.smsProvider === 'twilio'
+      ? (settings.smsSource === 'settings'
+        ? 'SMS-urile sunt <b>active</b>, folosind datele Twilio completate mai jos.'
+        : 'SMS-urile sunt <b>active</b>, folosind variabilele de mediu Twilio setate pe host.')
+      : 'SMS-urile rulează în <b>mod simulat</b> — completați datele Twilio mai jos pentru trimitere reală.';
 }
 
-async function saveSettings() {
-  const payload = {};
-  for (const f of SETTINGS_FIELDS) {
-    payload[f] = document.getElementById('s-' + f).value;
-  }
+async function saveSettingsPatch(payload, msgId, successMsg) {
   const res = await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(payload) });
   const data = await res.json();
-  const msg = document.getElementById('settings-msg');
+  const msg = document.getElementById(msgId);
   if (!res.ok) {
     msg.innerHTML = `<div class="msg msg-error">${esc(data.error)}</div>`;
     return;
   }
   settings = data;
-  msg.innerHTML = '<div class="msg msg-success">Datele firmei au fost salvate.</div>';
+  renderSettings();
+  msg.innerHTML = `<div class="msg msg-success">${esc(successMsg)}</div>`;
   setTimeout(() => (msg.innerHTML = ''), 3000);
+}
+
+async function saveCompanySettings() {
+  const payload = {};
+  for (const f of SETTINGS_FIELDS) payload[f] = document.getElementById('s-' + f).value;
+  await saveSettingsPatch(payload, 'settings-msg', 'Datele firmei au fost salvate.');
+}
+
+async function savePostmark() {
+  const payload = {
+    postmark: {
+      enabled: document.getElementById('pm-enabled').checked,
+      apiToken: document.getElementById('pm-apiToken').value.trim(),
+      fromEmail: document.getElementById('pm-fromEmail').value.trim(),
+      fromName: document.getElementById('pm-fromName').value.trim(),
+    },
+  };
+  await saveSettingsPatch(payload, 'postmark-msg', 'Configurarea de email a fost salvată.');
+}
+
+async function saveMarketing() {
+  await saveSettingsPatch(
+    { marketing: { enabled: document.getElementById('mk-enabled').checked } },
+    'marketing-msg', 'Setarea a fost salvată.'
+  );
+}
+
+async function saveTemplates() {
+  const payload = {
+    smsTemplates: {
+      ownerNewOrder: document.getElementById('tpl-ownerNewOrder').value,
+      clientConfirmed: document.getElementById('tpl-clientConfirmed').value,
+    },
+  };
+  await saveSettingsPatch(payload, 'templates-msg', 'Șabloanele au fost salvate.');
+}
+
+async function saveTwilio() {
+  const payload = {
+    twilio: {
+      accountSid: document.getElementById('tw-accountSid').value.trim(),
+      authToken: document.getElementById('tw-authToken').value.trim(),
+      fromNumber: document.getElementById('tw-fromNumber').value.trim(),
+    },
+  };
+  await saveSettingsPatch(payload, 'twilio-msg', 'Configurarea Twilio a fost salvată.');
+}
+
+async function sendTestSms() {
+  const msg = document.getElementById('twilio-msg');
+  if (!settings.ownerPhone) {
+    msg.innerHTML = '<div class="msg msg-error">Completați telefonul proprietarului în secțiunea Configurare.</div>';
+    return;
+  }
+  msg.innerHTML = `<div class="msg msg-success">Se trimite SMS de test către ${esc(settings.ownerPhone)}...</div>`;
+  const res = await api('/api/admin/test-sms', { method: 'POST', body: '{}' });
+  const data = await res.json();
+  msg.innerHTML = res.ok
+    ? `<div class="msg msg-success">SMS de test: <b>${esc(data.status)}</b> către ${esc(data.to)}.</div>`
+    : `<div class="msg msg-error">${esc(data.error)}</div>`;
+  api('/api/admin/sms-log').then((r) => r.json()).then((d) => { smsInfo = d; renderSmsLog(); });
+}
+
+async function sendTestEmail() {
+  const msg = document.getElementById('postmark-msg');
+  if (!settings.ownerEmail) {
+    msg.innerHTML = '<div class="msg msg-error">Completați email-ul proprietarului în secțiunea de mai sus (Date firmă).</div>';
+    return;
+  }
+  msg.innerHTML = `<div class="msg msg-success">Se trimite email de test către ${esc(settings.ownerEmail)}...</div>`;
+  const res = await api('/api/admin/test-email', { method: 'POST', body: '{}' });
+  const data = await res.json();
+  msg.innerHTML = res.ok
+    ? `<div class="msg msg-success">Email de test: <b>${esc(data.status)}</b> către ${esc(data.to)}.</div>`
+    : `<div class="msg msg-error">${esc(data.error)}</div>`;
+  api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
+}
+
+function renderMarketingCount() {
+  const uniq = new Set(
+    orders.filter((o) => o.customer.marketingOptIn && o.customer.email).map((o) => o.customer.email.toLowerCase())
+  );
+  document.getElementById('marketing-count').textContent = `${uniq.size} client${uniq.size === 1 ? '' : 'i'} abonați`;
+}
+
+async function exportMarketing() {
+  const res = await api('/api/admin/marketing-export');
+  if (!res.ok) return;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'granafarm-clienti-marketing.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // --- produse -------------------------------------------------------------------
@@ -514,12 +798,24 @@ document.getElementById('password').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') login();
 });
 document.getElementById('refresh-btn').onclick = loadAll;
-document.getElementById('save-settings-btn').onclick = saveSettings;
+document.getElementById('save-settings-btn').onclick = saveCompanySettings;
+document.getElementById('save-postmark-btn').onclick = savePostmark;
+document.getElementById('test-email-btn').onclick = sendTestEmail;
+document.getElementById('mk-enabled').onchange = saveMarketing;
+document.getElementById('export-marketing-btn').onclick = exportMarketing;
+document.getElementById('save-templates-btn').onclick = saveTemplates;
+document.getElementById('save-twilio-btn').onclick = saveTwilio;
+document.getElementById('test-sms-btn').onclick = sendTestSms;
 document.getElementById('add-product-btn').onclick = () => {
   document.getElementById('products-body').appendChild(
     productRow({ id: null, name: '', description: '', category: '', unit: 'kg', price: 0, available: true })
   );
 };
+
+document.querySelectorAll('.nav-tab').forEach((btn) => {
+  btn.onclick = () => showSection(btn.dataset.section);
+});
+window.addEventListener('hashchange', () => showSection(location.hash.slice(1)));
 
 if (password) {
   // verificăm parola salvată în sesiune

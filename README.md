@@ -16,33 +16,34 @@ Demo-ul folosește aceeași interfață, dar datele (comenzi, produse, facturi) 
 - Catalog de produse cu prețuri și unități de măsură (kg, bucată, legătură)
 - Alegerea cantității pentru fiecare produs, cu sumar și total calculat automat, plus bară de coș fixă cu totalul
 - Formular cu date de contact și livrare: nume, firmă, CUI (pentru factură), tip client, telefon, email, localitate, adresă de livrare, data dorită de livrare, observații
+- **„Ține minte datele mele"**: la o comandă viitoare de pe același telefon/computer, formularul se completează automat cu datele anterioare (nume, firmă, CUI, telefon, email, adresă) — clientul poate șterge oricând datele salvate cu un link „Nu sunt eu"
+- Bifă opțională „Vreau să primesc oferte prin email" (marketing)
 - Confirmare cu număr de comandă după trimitere
 
 ### Pentru proprietar — panoul de administrare (`/admin`)
-- Protejat cu parolă
-- Statistici: comenzi noi, comenzi primite azi, valoarea comenzilor în lucru
-- Lista comenzilor cu filtrare după status și detalii complete (produse, cantități, date de livrare, telefon apelabil)
-- Schimbarea statusului fiecărei comenzi: **Nouă → Confirmată → În livrare → Livrată** (sau Anulată)
-- Gestionarea catalogului: adăugare / modificare / ștergere produse, actualizare prețuri, marcarea produselor ca indisponibile
-- **Facturare**: emiterea facturii direct din comandă (serie și numerotare automată, defalcare bază de impozitare + TVA), listă cu toate facturile, printare / salvare ca PDF din browser
-- **Date firmă** configurabile din panou: denumire, CUI, Reg. Com., adresă, IBAN, seria facturilor, cota TVA
-- **Jurnal SMS** cu toate notificările trimise
+Protejat cu parolă, organizat pe secțiuni cu navigare:
 
-## Notificări SMS
+- **📋 Comenzi** — lista comenzilor cu filtrare după status, detalii complete (produse, cantități, date de livrare, telefon apelabil), schimbarea statusului **Nouă → Confirmată → În livrare → Livrată** (sau Anulată)
+- **📊 Statistici** — total comenzi, valoare vânzări, comenzi primite azi, comenzi scadente (livrare azi sau depășită), cu grafice pe zile și filtrare pe interval: Azi, Ieri, Săptămâna/Luna aceasta sau trecută, interval personalizat, tot timpul (implicit: ultimele 7 zile)
+- **🥕 Produse** — catalog cu categorii, descrieri, prețuri, unități de măsură și disponibilitate
+- **🧾 Facturi** — emitere automată cu serie și numerotare, defalcare bază de impozitare + TVA, printare / salvare PDF din browser
+- **⚙️ Configurare** — date firmă și facturare, configurare email (Postmark), marketing prin email (export CSV clienți abonați), șabloane SMS editabile
+- **🔌 Integrări** — configurare Twilio (SMS) direct din panou, cu test de trimitere și jurnal complet
 
-- **Comandă nouă** → SMS către proprietar (telefonul se setează în panoul de administrare, secțiunea „Date firmă")
-- **Comandă confirmată** → SMS către client, trimis automat (o singură dată) când schimbați statusul în „Confirmată"
+## Notificări SMS și email
 
-Trimiterea reală se face prin [Twilio](https://www.twilio.com). Fără credențiale, aplicația rulează în **mod simulat**: mesajele apar doar în jurnalul din panoul de administrare și în consolă — util pentru testare.
+- **Comandă nouă** → SMS + email către proprietar (se setează în Configurare → Date firmă)
+- **Comandă confirmată** → SMS + email către client, trimise automat (o singură dată) când schimbați statusul în „Confirmată"
+
+Textul mesajelor SMS este editabil din **Configurare → Șabloane SMS**, cu token-uri `{number} {name} {company} {total} {city} {phone} {deliveryDate}`.
+
+Integrările se pot configura **fie din panoul de administrare** (Configurare → Email, Integrări → Twilio — recomandat, nu necesită redeploy), **fie prin variabile de mediu** pe host (utile ca fallback):
 
 ```bash
-TWILIO_ACCOUNT_SID=ACxxxxxxxx \
-TWILIO_AUTH_TOKEN=xxxxxxxx \
-TWILIO_FROM=+40xxxxxxxxx \
-npm start
+TWILIO_ACCOUNT_SID=ACxxxxxxxx TWILIO_AUTH_TOKEN=xxxxxxxx TWILIO_FROM=+40xxxxxxxxx npm start
 ```
 
-Numerele românești sunt normalizate automat la formatul internațional (07xx… → +407xx…).
+Configurarea din panou are prioritate față de variabilele de mediu. Fără nimic configurat, SMS-urile și email-urile rulează în **mod simulat** — se scriu doar în jurnalele din panou, utile pentru testare. Numerele românești sunt normalizate automat la formatul internațional (07xx… → +407xx…).
 
 ## Facturare
 

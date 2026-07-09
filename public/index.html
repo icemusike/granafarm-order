@@ -34,6 +34,12 @@
       <div class="card summary" id="summary"></div>
 
       <h2 id="delivery-heading"><span class="step">3</span> Date de livrare</h2>
+
+      <div class="welcome-back hidden" id="welcome-back">
+        <span>👋 Bun venit înapoi<span id="welcome-name"></span>! Am completat datele dvs. din comanda anterioară.</span>
+        <button type="button" id="clear-profile-btn">Nu sunt eu / Șterge datele</button>
+      </div>
+
       <div class="card">
         <div class="form-grid">
           <div class="field">
@@ -83,6 +89,15 @@
             <textarea id="c-notes" rows="3" placeholder="ex: Livrare înainte de ora 9:00, sunați la sosire"></textarea>
           </div>
         </div>
+
+        <label class="check-row">
+          <input type="checkbox" id="c-remember" checked>
+          <span>Ține minte datele mele pentru comenzi viitoare (pe acest telefon/computer)</span>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="c-marketing">
+          <span>Vreau să primesc oferte și noutăți prin email (opțional)</span>
+        </label>
 
         <div id="form-msg"></div>
 
