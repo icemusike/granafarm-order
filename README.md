@@ -72,20 +72,87 @@ ADMIN_PASSWORD=parola-mea-secreta npm start
 
 Portul se poate schimba cu variabila `PORT` (implicit 3000).
 
-## Datele
+## Baza de date
 
-Comenzile și produsele sunt salvate în fișierul `data/db.json` (creat automat la prima pornire, cu catalogul GranaFarm organizat pe categorii: 9 soiuri de roșii, legume, fructe, conserve din roșii, dulcețuri și siropuri, murături). Fiecare produs are categorie, descriere, unitate de măsură și preț, toate editabile din panoul de administrare. Pentru backup este suficient să copiați acest fișier.
+Aplicația alege automat backend-ul de stocare:
 
-Dulcețurile și siropul de zmeură sunt incluse în catalog **fără preț confirmat** (marcate ca indisponibile) — setați prețul dorit și marcați-le ca disponibile din panoul de administrare.
+- **PostgreSQL** — în producție, când variabila `DATABASE_URL` este setată. Datele (comenzi, facturi, produse, setări) sunt durabile și incluse în backup-urile bazei de date.
+- **Fișier JSON local** (`data/db.json`) — pentru dezvoltare, când `DATABASE_URL` **nu** este setat. Potrivit doar pentru testare pe un singur calculator.
+
+⚠️ **Nu folosiți modul fișier JSON în producție pe hosturi cloud** — discul acestora se șterge la fiecare repornire. În producție folosiți întotdeauna PostgreSQL.
+
+Catalogul inițial (9 soiuri de roșii, legume, fructe, conserve din roșii, dulcețuri și siropuri, murături) se însămânțează automat la prima pornire, o singură dată. Dulcețurile și siropul de zmeură sunt incluse **fără preț confirmat** (indisponibile) — setați prețul și marcați-le ca disponibile din panoul de administrare.
+
+## 🚀 Publicare în producție (Railway + PostgreSQL)
+
+Pași (o singură dată, ~5 minute):
+
+1. Asigurați-vă că repo-ul este pe GitHub.
+2. Creați cont pe [railway.app](https://railway.app) și conectați-l cu GitHub.
+3. **New Project → Deploy from GitHub repo** → alegeți `granafarm-order`. Railway citește `railway.json` și pornește serverul.
+4. În proiect: **New → Database → Add PostgreSQL**. Railway creează baza de date și oferă automat variabila `DATABASE_URL`.
+5. Legați baza de serviciul web: la serviciul `granafarm-order` → **Variables** → **New Variable → Add Reference** → alegeți `DATABASE_URL` din serviciul Postgres. (Pe Railway, referința se face de obicei automat în același proiect.)
+6. Tot la **Variables**, adăugați:
+   - `ADMIN_PASSWORD` = o parolă sigură aleasă de dumneavoastră (obligatorie).
+   - *(opțional, pentru SMS real)* `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`.
+7. La serviciul web → **Settings → Networking → Generate Domain** pentru o adresă publică (ex. `granafarm-order-production.up.railway.app`). Gata de comenzi!
+
+Costuri orientative pe Railway: consum măsurat, tipic ~5–10 $/lună pentru un trafic mic (server + Postgres). Există un credit lunar gratuit pentru început.
+
+> **Verificare rapidă:** deschideți `https://ADRESA/healthz` — trebuie să răspundă `{"ok":true,"storage":"postgres"}`. Dacă apare `"storage":"json"`, înseamnă că `DATABASE_URL` nu este legat corect (datele NU ar fi durabile) — reveniți la pasul 5.
+
+### Alternativă: Render (blueprint automat)
+
+Repo-ul conține și `render.yaml`, care pe [render.com](https://render.com) creează serverul + baza PostgreSQL împreună: **New → Blueprint → alegeți repo-ul → Apply**. `DATABASE_URL` și `ADMIN_PASSWORD` se configurează automat.
+
+### Activarea SMS-urilor reale (Twilio)
+
+1. Creați cont pe [twilio.com](https://www.twilio.com) și obțineți un număr care poate trimite SMS către România (sau un *Alphanumeric Sender ID* „GranaFarm”, acceptat în România).
+2. Din consola Twilio luați **Account SID**, **Auth Token** și numărul expeditor.
+3. Adăugați în Variables (Railway/Render):
+   - `TWILIO_ACCOUNT_SID`
+   - `TWILIO_AUTH_TOKEN`
+   - `TWILIO_FROM` (format internațional, ex. `+40…`, sau sender ID-ul)
+4. Serviciul repornește și SMS-urile devin reale. Setați telefonul dumneavoastră în panoul de administrare („Date firmă → Telefon proprietar”) ca să primiți alerte la comenzi noi.
+
+Cost aproximativ: ~0,05–0,08 $ / SMS către România. Fără aceste variabile, aplicația rămâne în mod simulat (mesajele apar doar în jurnalul din panou).
+
+### Domeniu propriu (opțional)
+
+Railway: serviciul web → **Settings → Networking → Custom Domain**, adăugați ex. `comenzi.granafarm.ro` și urmați instrucțiunile DNS. Certificatul HTTPS este emis automat.
+
+### Backup și restaurare
+
+Pentru un export manual al bazei oricând (Railway oferă `DATABASE_URL` în Variables):
+
+```bash
+pg_dump "$DATABASE_URL" > backup-granafarm.sql
+```
+
+## Alte hosturi (Docker)
+
+Repo-ul include un `Dockerfile`. Pe orice server/VPS cu PostgreSQL:
+
+```bash
+docker build -t granafarm .
+docker run -d -p 3000:3000 \
+  -e DATABASE_URL="postgres://user:parola@host:5432/granafarm" \
+  -e ADMIN_PASSWORD="parola-sigura" \
+  -e TWILIO_ACCOUNT_SID=... -e TWILIO_AUTH_TOKEN=... -e TWILIO_FROM=... \
+  granafarm
+```
 
 ## Structura proiectului
 
 ```
-server.js          — serverul Express + API + stocarea datelor
-public/index.html  — pagina de comandă pentru clienți
-public/app.js
-public/admin.html  — panoul de administrare
-public/admin.js
-public/style.css   — stilurile comune
-data/db.json       — baza de date (generată automat, nu se versionează)
+server.js               — serverul Express + rutele API
+lib/storage.js          — alege backend-ul (Postgres sau JSON)
+lib/storage-postgres.js — stocare PostgreSQL (producție)
+lib/storage-json.js     — stocare fișier JSON (dezvoltare)
+lib/seed.js             — catalogul și setările inițiale
+public/                 — interfața (pagina de comandă, panou admin, stiluri, logo)
+demo/demo-api.js        — adaptor localStorage pentru demo-ul static (GitHub Pages)
+railway.json           — configurație publicare Railway (recomandat)
+render.yaml, Dockerfile — publicare pe Render / alte hosturi
+data/db.json            — baza de date locală (doar dev, nu se versionează)
 ```

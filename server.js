@@ -1,133 +1,48 @@
 /**
- * GranaFarm — aplicație de comenzi legume
+ * GranaFarm — aplicație de comenzi legume (server de producție)
  *
- * Server Express cu stocare într-un fișier JSON (data/db.json).
- * - Pagina publică (/)          : clienții plasează comenzi
- * - Panou administrare (/admin) : proprietarul gestionează comenzile, produsele,
- *                                 facturile și datele firmei
+ * Stocare:
+ *   - PostgreSQL în producție (setați DATABASE_URL) — durabil, cu backup
+ *   - fișier JSON local pentru dezvoltare (fără DATABASE_URL)
  *
- * Notificări SMS (opțional, prin Twilio):
+ * Notificări SMS (Twilio, opțional):
  *   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM
- * Fără aceste variabile, SMS-urile rulează în mod simulat (doar jurnal).
+ * Fără aceste variabile, SMS-urile rulează în mod simulat (se scriu doar în jurnal).
+ *
+ * Securitate:
+ *   ADMIN_PASSWORD — parola panoului de administrare (obligatorie în producție).
  */
 
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const { createStorage } = require('./lib/storage');
+const { DEFAULT_SETTINGS, ORDER_STATUSES, CLIENT_TYPES } = require('./lib/seed');
 
 const PORT = process.env.PORT || 3000;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'granafarm2026';
+const IS_PROD = Boolean(process.env.DATABASE_URL) || process.env.NODE_ENV === 'production';
+
+const DEFAULT_ADMIN_PASSWORD = 'granafarm2026';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD;
+
+// În producție, refuzăm pornirea cu parola implicită — altfel oricine ar avea acces.
+if (IS_PROD && ADMIN_PASSWORD === DEFAULT_ADMIN_PASSWORD) {
+  console.error('EROARE: setați variabila de mediu ADMIN_PASSWORD (parola implicită nu este permisă în producție).');
+  process.exit(1);
+}
 
 const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || '';
 const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
 const TWILIO_FROM = process.env.TWILIO_FROM || '';
 const SMS_ENABLED = Boolean(TWILIO_SID && TWILIO_TOKEN && TWILIO_FROM);
 
-const DATA_DIR = path.join(__dirname, 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
+const round2 = (v) => Math.round(Number(v) * 100) / 100;
 
-// ---------------------------------------------------------------------------
-// Stocare date (fișier JSON, scriere atomică)
-// ---------------------------------------------------------------------------
-
-const SEED_PRODUCTS = [
-  // Soiuri de roșii
-  { category: 'Roșii', name: 'Roșii De Grădină',        description: 'Soi românesc — mari',  unit: 'kg', price: 10, available: true },
-  { category: 'Roșii', name: 'Roșii Roz Dov',           description: 'Soi bulgăresc — mari', unit: 'kg', price: 10, available: true },
-  { category: 'Roșii', name: 'Roșii Inimă de Bou',      description: 'Soi bulgăresc — mari', unit: 'kg', price: 10, available: true },
-  { category: 'Roșii', name: 'Roșii Inimă de Albagena', description: 'Soi olandez — mari',   unit: 'kg', price: 10, available: true },
-  { category: 'Roșii', name: 'Roșii Roz Rose',          description: 'Soi sârbesc — medii',  unit: 'kg', price: 8,  available: true },
-  { category: 'Roșii', name: 'Roșii De Buzău',          description: 'Soi românesc — medii', unit: 'kg', price: 8,  available: true },
-  { category: 'Roșii', name: 'Roșii Negre Crimeea',     description: 'Hibrid — mici',        unit: 'kg', price: 8,  available: true },
-  { category: 'Roșii', name: 'Roșii Tolstoi',           description: 'Hibrid olandez — mici', unit: 'kg', price: 8, available: true },
-  { category: 'Roșii', name: 'Roșii Roma',              description: 'Soi italian — medii',  unit: 'kg', price: 8,  available: true },
-
-  // Legume
-  { category: 'Legume', name: 'Castraveți cornișon', description: '', unit: 'kg',       price: 4,  available: true },
-  { category: 'Legume', name: 'Ardei alb',           description: '', unit: 'kg',       price: 10, available: true },
-  { category: 'Legume', name: 'Ardei capia',         description: '', unit: 'kg',       price: 10, available: true },
-  { category: 'Legume', name: 'Ardei gogoșari',      description: '', unit: 'kg',       price: 10, available: true },
-  { category: 'Legume', name: 'Fasole verde',        description: '', unit: 'kg',       price: 20, available: true },
-  { category: 'Legume', name: 'Vinete de grădină',   description: '', unit: 'kg',       price: 10, available: true },
-  { category: 'Legume', name: 'Ceapă verde',         description: '', unit: 'legătură', price: 2,  available: true },
-  { category: 'Legume', name: 'Cartofi roz',         description: '', unit: 'kg',       price: 4,  available: true },
-
-  // Fructe
-  { category: 'Fructe', name: 'Căpșuni', description: '', unit: 'kg', price: 30, available: true },
-  { category: 'Fructe', name: 'Zmeură',  description: '', unit: 'kg', price: 60, available: true },
-
-  // Conserve din roșii
-  { category: 'Conserve din roșii', name: 'Bulion',         description: 'Produs în gospodărie', unit: 'litru', price: 25, available: true },
-  { category: 'Conserve din roșii', name: 'Pastă de roșii', description: 'Produs în gospodărie', unit: 'kg',    price: 40, available: true },
-
-  // Dulcețuri și siropuri — prețuri orientative; se activează din administrare
-  { category: 'Dulcețuri și siropuri', name: 'Dulceață de zmeură',  description: '', unit: 'borcan', price: 25, available: false },
-  { category: 'Dulcețuri și siropuri', name: 'Dulceață de caise',   description: '', unit: 'borcan', price: 25, available: false },
-  { category: 'Dulcețuri și siropuri', name: 'Dulceață de căpșuni', description: '', unit: 'borcan', price: 25, available: false },
-  { category: 'Dulcețuri și siropuri', name: 'Sirop de zmeură',     description: '', unit: 'litru',  price: 30, available: false },
-
-  // Murături
-  { category: 'Murături', name: 'Castraveți murați cu sare', description: 'Naturali, fără oțet', unit: 'kg', price: 20, available: true },
-  { category: 'Murături', name: 'Varză murată',              description: '',                    unit: 'kg', price: 10, available: true },
-  { category: 'Murături', name: 'Ardei umpluți cu varză',    description: '',                    unit: 'kg', price: 10, available: true },
-];
-
-// Datele firmei — apar pe facturi; se pot modifica din panoul de administrare.
-const DEFAULT_SETTINGS = {
-  companyName: 'GRANA FARM SRL',
-  cui: '48892842',
-  regCom: 'J11/569/2023',
-  euid: 'ROONRC.J11/569/2023',
-  address: '',
-  city: '',
-  phone: '+40 728209980',
-  email: '',
-  iban: '',
-  bank: '',
-  vatRate: 11,                    // cota TVA (%) — prețurile din catalog includ TVA
-  invoiceSeries: 'GF',
-  ownerPhone: '+40 728209980',    // primește SMS la fiecare comandă nouă
-};
-
-let db = null;
-
-function loadDb() {
-  if (fs.existsSync(DB_FILE)) {
-    db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  } else {
-    db = {
-      products: SEED_PRODUCTS.map((p) => ({ id: crypto.randomUUID(), ...p })),
-      orders: [],
-      nextOrderNumber: 1,
-    };
-  }
-  // câmpuri adăugate ulterior — completate la migrare
-  db.settings = { ...DEFAULT_SETTINGS, ...(db.settings || {}) };
-  db.products.forEach((p) => {
-    p.category = p.category || '';
-    p.description = p.description || '';
-  });
-  db.invoices = db.invoices || [];
-  db.nextInvoiceNumber = db.nextInvoiceNumber || 1;
-  db.smsLog = db.smsLog || [];
-  saveDb();
-}
-
-function saveDb() {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  const tmp = DB_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-  fs.renameSync(tmp, DB_FILE);
-}
-
-const round2 = (v) => Math.round(v * 100) / 100;
+const storage = createStorage();
 
 // ---------------------------------------------------------------------------
 // SMS (Twilio sau mod simulat)
 // ---------------------------------------------------------------------------
 
-// 07xx xxx xxx -> +407xxxxxxxx
 function normalizePhone(raw) {
   const d = String(raw).replace(/[^\d+]/g, '');
   if (d.startsWith('+')) return d;
@@ -136,21 +51,14 @@ function normalizePhone(raw) {
   return '+' + d;
 }
 
-// SMS-urile sunt scrise fără diacritice: caracterele unicode scurtează
-// limita unui SMS de la 160 la 70 de caractere.
+// SMS fără diacritice: caracterele unicode reduc limita unui SMS de la 160 la 70.
 function stripDiacritics(s) {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[țȚ]/g, 't').replace(/[șȘ]/g, 's');
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[țȚ]/g, 't').replace(/[șȘ]/g, 's');
 }
 
 async function sendSms(to, body, kind) {
-  const entry = {
-    id: crypto.randomUUID(),
-    at: new Date().toISOString(),
-    to: normalizePhone(to),
-    kind, // 'comanda_noua' | 'confirmare'
-    body: stripDiacritics(body),
-    status: 'simulat',
-  };
+  const entry = { to: normalizePhone(to), kind, body: stripDiacritics(body), status: 'simulat' };
 
   if (SMS_ENABLED) {
     try {
@@ -177,32 +85,33 @@ async function sendSms(to, body, kind) {
     console.log(`[SMS simulat] catre ${entry.to}: ${entry.body}`);
   }
 
-  db.smsLog.unshift(entry);
-  db.smsLog = db.smsLog.slice(0, 100);
-  saveDb();
+  await storage.addSms(entry);
   return entry;
 }
 
-function notifyOwnerNewOrder(order) {
-  const phone = db.settings.ownerPhone;
-  if (!phone) return;
+async function notifyOwnerNewOrder(order) {
+  const settings = await storage.getSettings();
+  if (!settings.ownerPhone) return;
   const company = order.customer.company ? ` (${order.customer.company})` : '';
   const body =
     `GranaFarm: Comanda noua ${order.number} de la ${order.customer.name}${company}, ` +
     `total ${order.total.toFixed(2)} lei, livrare in ${order.customer.city}. ` +
     `Telefon client: ${order.customer.phone}`;
-  sendSms(phone, body, 'comanda_noua').catch((e) => console.error('SMS eroare:', e.message));
+  await sendSms(settings.ownerPhone, body, 'comanda_noua');
 }
 
-function notifyClientConfirmed(order) {
+async function notifyClientConfirmed(order) {
   const delivery = order.customer.deliveryDate
     ? ` Livrare estimata: ${order.customer.deliveryDate.split('-').reverse().join('.')}.`
     : '';
   const body =
     `GranaFarm: Comanda dvs. ${order.number} in valoare de ${order.total.toFixed(2)} lei ` +
     `a fost confirmata.${delivery} Va multumim!`;
-  sendSms(order.customer.phone, body, 'confirmare').catch((e) => console.error('SMS eroare:', e.message));
+  await sendSms(order.customer.phone, body, 'confirmare');
 }
+
+// „Fire and forget" cu prindere de erori — SMS-ul nu trebuie să blocheze răspunsul.
+const fireSms = (p) => { p.catch((e) => console.error('SMS eroare:', e.message)); };
 
 // ---------------------------------------------------------------------------
 // Aplicație
@@ -212,18 +121,26 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const ORDER_STATUSES = ['noua', 'confirmata', 'in_livrare', 'livrata', 'anulata'];
-const CLIENT_TYPES = ['restaurant', 'magazin', 'angro', 'persoana_fizica', 'altul'];
+const asyncRoute = (fn) => (req, res) =>
+  Promise.resolve(fn(req, res)).catch((err) => {
+    console.error(err);
+    if (!res.headersSent) res.status(500).json({ error: 'Eroare internă de server.' });
+  });
+
+// Verificare stare (pentru host)
+app.get('/healthz', asyncRoute(async (req, res) => {
+  await storage.ping();
+  res.json({ ok: true, storage: storage.kind });
+}));
 
 // --- API publică ------------------------------------------------------------
 
-app.get('/api/products', (req, res) => {
-  res.json(db.products.filter((p) => p.available));
-});
+app.get('/api/products', asyncRoute(async (req, res) => {
+  res.json(await storage.listAvailableProducts());
+}));
 
-app.post('/api/orders', (req, res) => {
+app.post('/api/orders', asyncRoute(async (req, res) => {
   const { customer, items } = req.body || {};
-
   if (!customer || typeof customer !== 'object') {
     return res.status(400).json({ error: 'Datele clientului lipsesc.' });
   }
@@ -239,7 +156,7 @@ app.post('/api/orders', (req, res) => {
 
   const orderItems = [];
   for (const item of items) {
-    const product = db.products.find((p) => p.id === item.productId && p.available);
+    const product = await storage.getAvailableProduct(item.productId);
     if (!product) {
       return res.status(400).json({ error: 'Un produs din coș nu mai este disponibil. Reîncărcați pagina.' });
     }
@@ -248,48 +165,29 @@ app.post('/api/orders', (req, res) => {
       return res.status(400).json({ error: `Cantitate invalidă pentru ${product.name}.` });
     }
     orderItems.push({
-      productId: product.id,
-      name: product.name,
-      unit: product.unit,
-      price: product.price,
-      qty: round2(qty),
+      productId: product.id, name: product.name, unit: product.unit,
+      price: product.price, qty: round2(qty),
     });
   }
-
   const total = round2(orderItems.reduce((s, i) => s + i.price * i.qty, 0));
 
-  const order = {
-    id: crypto.randomUUID(),
-    number: 'CMD-' + String(db.nextOrderNumber).padStart(4, '0'),
-    createdAt: new Date().toISOString(),
-    status: 'noua',
-    customer: {
-      name: String(customer.name).trim(),
-      company: String(customer.company || '').trim(),
-      cui: String(customer.cui || '').trim(),
-      type: CLIENT_TYPES.includes(customer.type) ? customer.type : 'altul',
-      phone: String(customer.phone).trim(),
-      email: String(customer.email || '').trim(),
-      address: String(customer.address).trim(),
-      city: String(customer.city).trim(),
-      deliveryDate: String(customer.deliveryDate || '').trim(),
-      notes: String(customer.notes || '').trim(),
-    },
-    items: orderItems,
-    total,
-    invoiceId: null,
-    invoiceNumber: null,
-    confirmationSmsSent: false,
+  const customerData = {
+    name: String(customer.name).trim(),
+    company: String(customer.company || '').trim(),
+    cui: String(customer.cui || '').trim(),
+    type: CLIENT_TYPES.includes(customer.type) ? customer.type : 'altul',
+    phone: String(customer.phone).trim(),
+    email: String(customer.email || '').trim(),
+    address: String(customer.address).trim(),
+    city: String(customer.city).trim(),
+    deliveryDate: String(customer.deliveryDate || '').trim(),
+    notes: String(customer.notes || '').trim(),
   };
 
-  db.nextOrderNumber += 1;
-  db.orders.push(order);
-  saveDb();
-
-  notifyOwnerNewOrder(order);
-
+  const order = await storage.createOrder({ customer: customerData, items: orderItems, total });
+  fireSms(notifyOwnerNewOrder(order));
   res.status(201).json({ number: order.number, total: order.total });
-});
+}));
 
 // --- API administrare --------------------------------------------------------
 
@@ -303,65 +201,42 @@ app.post('/api/admin/login', (req, res) => {
   res.status(401).json({ error: 'Parolă incorectă.' });
 });
 
-// Comenzi
+app.get('/api/admin/orders', requireAdmin, asyncRoute(async (req, res) => {
+  res.json(await storage.listOrders());
+}));
 
-app.get('/api/admin/orders', requireAdmin, (req, res) => {
-  const orders = [...db.orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  res.json(orders);
-});
-
-app.patch('/api/admin/orders/:id', requireAdmin, (req, res) => {
-  const order = db.orders.find((o) => o.id === req.params.id);
-  if (!order) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
+app.patch('/api/admin/orders/:id', requireAdmin, asyncRoute(async (req, res) => {
   const { status } = req.body || {};
-  if (!ORDER_STATUSES.includes(status)) {
-    return res.status(400).json({ error: 'Status invalid.' });
-  }
-  const prev = order.status;
-  order.status = status;
+  if (!ORDER_STATUSES.includes(status)) return res.status(400).json({ error: 'Status invalid.' });
+  const result = await storage.setOrderStatus(req.params.id, status);
+  if (!result) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
+  if (result.shouldSendConfirmation) fireSms(notifyClientConfirmed(result.order));
+  res.json(result.order);
+}));
 
-  // SMS de confirmare către client, o singură dată
-  if (status === 'confirmata' && prev !== 'confirmata' && !order.confirmationSmsSent) {
-    order.confirmationSmsSent = true;
-    notifyClientConfirmed(order);
-  }
+app.get('/api/admin/products', requireAdmin, asyncRoute(async (req, res) => {
+  res.json(await storage.listProducts());
+}));
 
-  saveDb();
-  res.json(order);
-});
-
-// Produse
-
-app.get('/api/admin/products', requireAdmin, (req, res) => {
-  res.json(db.products);
-});
-
-app.post('/api/admin/products', requireAdmin, (req, res) => {
+app.post('/api/admin/products', requireAdmin, asyncRoute(async (req, res) => {
   const parsed = parseProduct(req.body);
   if (parsed.error) return res.status(400).json({ error: parsed.error });
-  const product = { id: crypto.randomUUID(), ...parsed.value };
-  db.products.push(product);
-  saveDb();
-  res.status(201).json(product);
-});
+  res.status(201).json(await storage.addProduct(parsed.value));
+}));
 
-app.put('/api/admin/products/:id', requireAdmin, (req, res) => {
-  const product = db.products.find((p) => p.id === req.params.id);
-  if (!product) return res.status(404).json({ error: 'Produsul nu a fost găsit.' });
+app.put('/api/admin/products/:id', requireAdmin, asyncRoute(async (req, res) => {
   const parsed = parseProduct(req.body);
   if (parsed.error) return res.status(400).json({ error: parsed.error });
-  Object.assign(product, parsed.value);
-  saveDb();
-  res.json(product);
-});
+  const updated = await storage.updateProduct(req.params.id, parsed.value);
+  if (!updated) return res.status(404).json({ error: 'Produsul nu a fost găsit.' });
+  res.json(updated);
+}));
 
-app.delete('/api/admin/products/:id', requireAdmin, (req, res) => {
-  const idx = db.products.findIndex((p) => p.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Produsul nu a fost găsit.' });
-  db.products.splice(idx, 1);
-  saveDb();
+app.delete('/api/admin/products/:id', requireAdmin, asyncRoute(async (req, res) => {
+  const ok = await storage.deleteProduct(req.params.id);
+  if (!ok) return res.status(404).json({ error: 'Produsul nu a fost găsit.' });
   res.json({ ok: true });
-});
+}));
 
 function parseProduct(body) {
   const { name, unit, price, available, category, description } = body || {};
@@ -381,15 +256,14 @@ function parseProduct(body) {
   };
 }
 
-// Setări firmă (apar pe facturi + telefonul pentru notificări)
+app.get('/api/admin/settings', requireAdmin, asyncRoute(async (req, res) => {
+  res.json({ ...(await storage.getSettings()), smsProvider: SMS_ENABLED ? 'twilio' : 'simulat' });
+}));
 
-app.get('/api/admin/settings', requireAdmin, (req, res) => {
-  res.json({ ...db.settings, smsProvider: SMS_ENABLED ? 'twilio' : 'simulat' });
-});
-
-app.put('/api/admin/settings', requireAdmin, (req, res) => {
+app.put('/api/admin/settings', requireAdmin, asyncRoute(async (req, res) => {
   const body = req.body || {};
-  const next = { ...db.settings };
+  const current = await storage.getSettings();
+  const next = { ...current };
   for (const key of Object.keys(DEFAULT_SETTINGS)) {
     if (key in body) next[key] = key === 'vatRate' ? Number(body[key]) : String(body[key]).trim();
   }
@@ -398,52 +272,26 @@ app.put('/api/admin/settings', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Cota TVA trebuie să fie între 0 și 50.' });
   }
   if (!next.invoiceSeries) return res.status(400).json({ error: 'Seria facturilor este obligatorie.' });
-  db.settings = next;
-  saveDb();
-  res.json({ ...db.settings, smsProvider: SMS_ENABLED ? 'twilio' : 'simulat' });
-});
+  await storage.saveSettings(next);
+  res.json({ ...next, smsProvider: SMS_ENABLED ? 'twilio' : 'simulat' });
+}));
 
-// Facturi — prețurile din catalog includ TVA; factura defalcă baza și TVA-ul.
+app.get('/api/admin/invoices', requireAdmin, asyncRoute(async (req, res) => {
+  res.json(await storage.listInvoices());
+}));
 
-app.get('/api/admin/invoices', requireAdmin, (req, res) => {
-  const invoices = [...db.invoices].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
-  res.json(invoices);
-});
-
-app.post('/api/admin/orders/:id/invoice', requireAdmin, (req, res) => {
-  const order = db.orders.find((o) => o.id === req.params.id);
+app.post('/api/admin/orders/:id/invoice', requireAdmin, asyncRoute(async (req, res) => {
+  const order = await storage.getOrder(req.params.id);
   if (!order) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
-  if (order.status === 'anulata') {
-    return res.status(400).json({ error: 'Nu se poate emite factură pentru o comandă anulată.' });
-  }
-  if (order.invoiceId) {
-    const existing = db.invoices.find((i) => i.id === order.invoiceId);
-    if (existing) return res.json(existing);
-  }
 
-  const s = db.settings;
+  const s = await storage.getSettings();
   const vatRate = Number(s.vatRate) || 0;
-  const total = order.total;
-  const subtotal = round2(total / (1 + vatRate / 100));
-  const vatAmount = round2(total - subtotal);
-
-  const invoice = {
-    id: crypto.randomUUID(),
-    number: `${s.invoiceSeries}-${String(db.nextInvoiceNumber).padStart(4, '0')}`,
-    orderId: order.id,
-    orderNumber: order.number,
-    issuedAt: new Date().toISOString(),
+  const subtotal = round2(order.total / (1 + vatRate / 100));
+  const computed = {
+    series: s.invoiceSeries,
     seller: {
-      companyName: s.companyName,
-      cui: s.cui,
-      regCom: s.regCom,
-      euid: s.euid,
-      address: s.address,
-      city: s.city,
-      phone: s.phone,
-      email: s.email,
-      iban: s.iban,
-      bank: s.bank,
+      companyName: s.companyName, cui: s.cui, regCom: s.regCom, euid: s.euid,
+      address: s.address, city: s.city, phone: s.phone, email: s.email, iban: s.iban, bank: s.bank,
     },
     buyer: {
       name: order.customer.company || order.customer.name,
@@ -457,34 +305,39 @@ app.post('/api/admin/orders/:id/invoice', requireAdmin, (req, res) => {
     items: order.items.map((i) => ({ ...i, lineTotal: round2(i.price * i.qty) })),
     vatRate,
     subtotal,
-    vatAmount,
-    total,
+    vatAmount: round2(order.total - subtotal),
+    total: order.total,
   };
 
-  db.nextInvoiceNumber += 1;
-  db.invoices.push(invoice);
-  order.invoiceId = invoice.id;
-  order.invoiceNumber = invoice.number;
-  saveDb();
+  const result = await storage.createInvoiceForOrder(order.id, computed);
+  if (result.error === 'not_found') return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
+  if (result.error === 'cancelled') return res.status(400).json({ error: 'Nu se poate emite factură pentru o comandă anulată.' });
+  res.status(result.invoice.orderId ? 201 : 200).json(result.invoice);
+}));
 
-  res.status(201).json(invoice);
-});
-
-// Jurnal SMS
-
-app.get('/api/admin/sms-log', requireAdmin, (req, res) => {
-  res.json({ provider: SMS_ENABLED ? 'twilio' : 'simulat', log: db.smsLog });
-});
-
-// --- Pagini -------------------------------------------------------------------
+app.get('/api/admin/sms-log', requireAdmin, asyncRoute(async (req, res) => {
+  res.json({ provider: SMS_ENABLED ? 'twilio' : 'simulat', log: await storage.listSms() });
+}));
 
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-loadDb();
-app.listen(PORT, () => {
-  console.log(`GranaFarm rulează pe http://localhost:${PORT}`);
-  console.log(`Panou administrare: http://localhost:${PORT}/admin`);
-  console.log(`SMS: ${SMS_ENABLED ? 'Twilio activ' : 'mod simulat (setați TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM)'}`);
+// ---------------------------------------------------------------------------
+// Pornire
+// ---------------------------------------------------------------------------
+
+async function start() {
+  await storage.init();
+  app.listen(PORT, () => {
+    console.log(`GranaFarm rulează pe http://localhost:${PORT}`);
+    console.log(`Panou administrare: http://localhost:${PORT}/admin`);
+    console.log(`Stocare: ${storage.kind === 'postgres' ? 'PostgreSQL (producție)' : 'fișier JSON (dezvoltare)'}`);
+    console.log(`SMS: ${SMS_ENABLED ? 'Twilio activ' : 'mod simulat'}`);
+  });
+}
+
+start().catch((err) => {
+  console.error('Pornire eșuată:', err);
+  process.exit(1);
 });
