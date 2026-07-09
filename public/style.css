@@ -171,10 +171,39 @@ h2 .step {
 
 /* -------------------------------------------------------- catalog produse --- */
 
-.products {
+.products-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
   gap: 14px;
+}
+
+.cat-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--green-800);
+  margin: 26px 0 13px;
+  letter-spacing: -0.01em;
+}
+.cat-title:first-child { margin-top: 4px; }
+
+.cat-title .count {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--green-700);
+  background: var(--green-100);
+  border: 1px solid var(--green-200);
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
+.cat-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--line), transparent);
 }
 
 .product {
@@ -215,6 +244,7 @@ h2 .step {
 .product.selected .emoji { background: var(--green-100); }
 
 .product .name { font-weight: 700; font-size: 1rem; letter-spacing: -0.01em; }
+.product .desc { font-size: 0.8rem; color: var(--muted); margin: 1px 0 2px; }
 
 .product .price {
   display: inline-block;

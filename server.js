@@ -32,21 +32,45 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 // ---------------------------------------------------------------------------
 
 const SEED_PRODUCTS = [
-  { name: 'Roșii',           unit: 'kg',       price: 8.5,  available: true },
-  { name: 'Roșii cherry',    unit: 'kg',       price: 14.0, available: true },
-  { name: 'Castraveți',      unit: 'kg',       price: 6.5,  available: true },
-  { name: 'Castraveți cornișon', unit: 'kg',   price: 7.5,  available: true },
-  { name: 'Ardei gras',      unit: 'kg',       price: 10.0, available: true },
-  { name: 'Ardei capia',     unit: 'kg',       price: 11.0, available: true },
-  { name: 'Ardei iute',      unit: 'kg',       price: 15.0, available: true },
-  { name: 'Vinete',          unit: 'kg',       price: 9.0,  available: true },
-  { name: 'Dovlecei',        unit: 'kg',       price: 5.5,  available: true },
-  { name: 'Salată verde',    unit: 'bucată',   price: 3.0,  available: true },
-  { name: 'Ceapă verde',     unit: 'legătură', price: 2.5,  available: true },
-  { name: 'Ridichi',         unit: 'legătură', price: 3.0,  available: true },
-  { name: 'Pătrunjel',       unit: 'legătură', price: 2.0,  available: true },
-  { name: 'Mărar',           unit: 'legătură', price: 2.0,  available: true },
-  { name: 'Spanac',          unit: 'kg',       price: 12.0, available: true },
+  // Soiuri de roșii
+  { category: 'Roșii', name: 'Roșii De Grădină',        description: 'Soi românesc — mari',  unit: 'kg', price: 10, available: true },
+  { category: 'Roșii', name: 'Roșii Roz Dov',           description: 'Soi bulgăresc — mari', unit: 'kg', price: 10, available: true },
+  { category: 'Roșii', name: 'Roșii Inimă de Bou',      description: 'Soi bulgăresc — mari', unit: 'kg', price: 10, available: true },
+  { category: 'Roșii', name: 'Roșii Inimă de Albagena', description: 'Soi olandez — mari',   unit: 'kg', price: 10, available: true },
+  { category: 'Roșii', name: 'Roșii Roz Rose',          description: 'Soi sârbesc — medii',  unit: 'kg', price: 8,  available: true },
+  { category: 'Roșii', name: 'Roșii De Buzău',          description: 'Soi românesc — medii', unit: 'kg', price: 8,  available: true },
+  { category: 'Roșii', name: 'Roșii Negre Crimeea',     description: 'Hibrid — mici',        unit: 'kg', price: 8,  available: true },
+  { category: 'Roșii', name: 'Roșii Tolstoi',           description: 'Hibrid olandez — mici', unit: 'kg', price: 8, available: true },
+  { category: 'Roșii', name: 'Roșii Roma',              description: 'Soi italian — medii',  unit: 'kg', price: 8,  available: true },
+
+  // Legume
+  { category: 'Legume', name: 'Castraveți cornișon', description: '', unit: 'kg',       price: 4,  available: true },
+  { category: 'Legume', name: 'Ardei alb',           description: '', unit: 'kg',       price: 10, available: true },
+  { category: 'Legume', name: 'Ardei capia',         description: '', unit: 'kg',       price: 10, available: true },
+  { category: 'Legume', name: 'Ardei gogoșari',      description: '', unit: 'kg',       price: 10, available: true },
+  { category: 'Legume', name: 'Fasole verde',        description: '', unit: 'kg',       price: 20, available: true },
+  { category: 'Legume', name: 'Vinete de grădină',   description: '', unit: 'kg',       price: 10, available: true },
+  { category: 'Legume', name: 'Ceapă verde',         description: '', unit: 'legătură', price: 2,  available: true },
+  { category: 'Legume', name: 'Cartofi roz',         description: '', unit: 'kg',       price: 4,  available: true },
+
+  // Fructe
+  { category: 'Fructe', name: 'Căpșuni', description: '', unit: 'kg', price: 30, available: true },
+  { category: 'Fructe', name: 'Zmeură',  description: '', unit: 'kg', price: 60, available: true },
+
+  // Conserve din roșii
+  { category: 'Conserve din roșii', name: 'Bulion',         description: 'Produs în gospodărie', unit: 'litru', price: 25, available: true },
+  { category: 'Conserve din roșii', name: 'Pastă de roșii', description: 'Produs în gospodărie', unit: 'kg',    price: 40, available: true },
+
+  // Dulcețuri și siropuri — prețuri orientative; se activează din administrare
+  { category: 'Dulcețuri și siropuri', name: 'Dulceață de zmeură',  description: '', unit: 'borcan', price: 25, available: false },
+  { category: 'Dulcețuri și siropuri', name: 'Dulceață de caise',   description: '', unit: 'borcan', price: 25, available: false },
+  { category: 'Dulcețuri și siropuri', name: 'Dulceață de căpșuni', description: '', unit: 'borcan', price: 25, available: false },
+  { category: 'Dulcețuri și siropuri', name: 'Sirop de zmeură',     description: '', unit: 'litru',  price: 30, available: false },
+
+  // Murături
+  { category: 'Murături', name: 'Castraveți murați cu sare', description: 'Naturali, fără oțet', unit: 'kg', price: 20, available: true },
+  { category: 'Murături', name: 'Varză murată',              description: '',                    unit: 'kg', price: 10, available: true },
+  { category: 'Murături', name: 'Ardei umpluți cu varză',    description: '',                    unit: 'kg', price: 10, available: true },
 ];
 
 // Datele firmei — apar pe facturi; se pot modifica din panoul de administrare.
@@ -80,6 +104,10 @@ function loadDb() {
   }
   // câmpuri adăugate ulterior — completate la migrare
   db.settings = { ...DEFAULT_SETTINGS, ...(db.settings || {}) };
+  db.products.forEach((p) => {
+    p.category = p.category || '';
+    p.description = p.description || '';
+  });
   db.invoices = db.invoices || [];
   db.nextInvoiceNumber = db.nextInvoiceNumber || 1;
   db.smsLog = db.smsLog || [];
@@ -336,7 +364,7 @@ app.delete('/api/admin/products/:id', requireAdmin, (req, res) => {
 });
 
 function parseProduct(body) {
-  const { name, unit, price, available } = body || {};
+  const { name, unit, price, available, category, description } = body || {};
   if (!name || !String(name).trim()) return { error: 'Numele produsului este obligatoriu.' };
   if (!unit || !String(unit).trim()) return { error: 'Unitatea de măsură este obligatorie.' };
   const p = Number(price);
@@ -344,6 +372,8 @@ function parseProduct(body) {
   return {
     value: {
       name: String(name).trim(),
+      category: String(category || '').trim(),
+      description: String(description || '').trim(),
       unit: String(unit).trim(),
       price: round2(p),
       available: Boolean(available),

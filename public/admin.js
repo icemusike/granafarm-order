@@ -425,27 +425,35 @@ async function saveSettings() {
 
 // --- produse -------------------------------------------------------------------
 
+const UNITS = ['kg', 'bucată', 'legătură', 'ladă', 'litru', 'borcan'];
+
 function renderProducts() {
   const body = document.getElementById('products-body');
   body.innerHTML = '';
   for (const p of products) {
     body.appendChild(productRow(p));
   }
+  // sugestii de categorii existente pentru câmpul „Categorie"
+  const cats = [...new Set(products.map((p) => p.category).filter(Boolean))];
+  document.getElementById('cat-list').innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join('');
 }
 
 function productRow(p) {
   const tr = document.createElement('tr');
+  const units = UNITS.includes(p.unit) || !p.unit ? UNITS : [p.unit, ...UNITS];
   tr.innerHTML = `
     <td><input type="text" value="${esc(p.name)}" data-name></td>
+    <td><input type="text" value="${esc(p.description || '')}" data-description placeholder="ex: Soi românesc — mari"></td>
+    <td><input type="text" value="${esc(p.category || '')}" data-category list="cat-list" placeholder="ex: Legume" style="min-width:110px;"></td>
     <td><select data-unit>
-      ${['kg', 'bucată', 'legătură', 'ladă'].map((u) => `<option ${p.unit === u ? 'selected' : ''}>${u}</option>`).join('')}
+      ${units.map((u) => `<option ${p.unit === u ? 'selected' : ''}>${u}</option>`).join('')}
     </select></td>
     <td class="num"><input type="number" min="0" step="0.5" value="${p.price}" data-price></td>
     <td><select data-available>
       <option value="true" ${p.available ? 'selected' : ''}>Da</option>
       <option value="false" ${!p.available ? 'selected' : ''}>Nu</option>
     </select></td>
-    <td>
+    <td style="white-space:nowrap;">
       <button class="btn-small save" data-save>Salvează</button>
       <button class="btn-small danger" data-delete>Șterge</button>
     </td>`;
@@ -453,6 +461,8 @@ function productRow(p) {
   tr.querySelector('[data-save]').onclick = async () => {
     const payload = {
       name: tr.querySelector('[data-name]').value,
+      description: tr.querySelector('[data-description]').value,
+      category: tr.querySelector('[data-category]').value,
       unit: tr.querySelector('[data-unit]').value,
       price: Number(tr.querySelector('[data-price]').value),
       available: tr.querySelector('[data-available]').value === 'true',
@@ -499,7 +509,7 @@ document.getElementById('refresh-btn').onclick = loadAll;
 document.getElementById('save-settings-btn').onclick = saveSettings;
 document.getElementById('add-product-btn').onclick = () => {
   document.getElementById('products-body').appendChild(
-    productRow({ id: null, name: '', unit: 'kg', price: 0, available: true })
+    productRow({ id: null, name: '', description: '', category: '', unit: 'kg', price: 0, available: true })
   );
 };
 

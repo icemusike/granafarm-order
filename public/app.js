@@ -6,6 +6,13 @@ const cart = new Map(); // productId -> cantitate
 const lei = (v) => v.toFixed(2).replace('.', ',') + ' lei';
 
 const PRODUCT_EMOJI = [
+  [/murat|murătur|muratur|umplu/i, '🫙'],
+  [/bulion|past[ăa]/i, '🥫'],
+  [/dulcea|sirop|miere/i, '🍯'],
+  [/căpșun|capsun/i, '🍓'],
+  [/zmeur|afin|mur[ăe]/i, '🫐'],
+  [/cais|piersic/i, '🍑'],
+  [/fasole|mazăre|mazare/i, '🫛'],
   [/roșii|rosii|tomate/i, '🍅'],
   [/castrave/i, '🥒'],
   [/ardei iute/i, '🌶️'],
@@ -37,7 +44,29 @@ async function init() {
 function renderProducts() {
   const el = document.getElementById('products');
   el.innerHTML = '';
-  products.forEach((p, i) => {
+
+  // grupare pe categorii, în ordinea în care apar în catalog
+  const groups = new Map();
+  for (const p of products) {
+    const cat = p.category || 'Alte produse';
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push(p);
+  }
+
+  for (const [cat, items] of groups) {
+    const title = document.createElement('h3');
+    title.className = 'cat-title';
+    title.innerHTML = `${emojiFor(cat + ' ' + items[0].name)} ${esc(cat)} <span class="count">${items.length}</span>`;
+    el.appendChild(title);
+
+    const grid = document.createElement('div');
+    grid.className = 'products-grid';
+    items.forEach((p, i) => grid.appendChild(productCard(p, i)));
+    el.appendChild(grid);
+  }
+}
+
+function productCard(p, i) {
     const card = document.createElement('div');
     card.className = 'product' + (cart.has(p.id) ? ' selected' : '');
     card.style.animationDelay = Math.min(i * 30, 400) + 'ms';
@@ -46,6 +75,7 @@ function renderProducts() {
         <div class="emoji">${emojiFor(p.name)}</div>
         <div>
           <div class="name">${esc(p.name)}</div>
+          ${p.description ? `<div class="desc">${esc(p.description)}</div>` : ''}
           <span class="price">${lei(p.price)} <span>/ ${esc(p.unit)}</span></span>
         </div>
       </div>
@@ -68,8 +98,7 @@ function renderProducts() {
     card.querySelector('[data-inc]').onclick = () => setQty((cart.get(p.id) || 0) + 1);
     input.oninput = () => setQty(Number(input.value) || 0);
 
-    el.appendChild(card);
-  });
+    return card;
 }
 
 function renderSummary() {

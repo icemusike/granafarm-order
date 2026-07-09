@@ -68,7 +68,9 @@ Portul se poate schimba cu variabila `PORT` (implicit 3000).
 
 ## Datele
 
-Comenzile și produsele sunt salvate în fișierul `data/db.json` (creat automat la prima pornire, cu un catalog inițial de legume: roșii, castraveți, ardei, vinete, dovlecei, verdețuri etc.). Pentru backup este suficient să copiați acest fișier.
+Comenzile și produsele sunt salvate în fișierul `data/db.json` (creat automat la prima pornire, cu catalogul GranaFarm organizat pe categorii: 9 soiuri de roșii, legume, fructe, conserve din roșii, dulcețuri și siropuri, murături). Fiecare produs are categorie, descriere, unitate de măsură și preț, toate editabile din panoul de administrare. Pentru backup este suficient să copiați acest fișier.
+
+Dulcețurile și siropul de zmeură sunt incluse în catalog **fără preț confirmat** (marcate ca indisponibile) — setați prețul dorit și marcați-le ca disponibile din panoul de administrare.
 
 ## Structura proiectului
 
