@@ -274,7 +274,7 @@ function renderInvoices() {
 function openInvoice(inv) {
   const date = new Date(inv.issuedAt).toLocaleDateString('ro-RO', { dateStyle: 'long' });
   // logo rezolvat față de pagina curentă (merge și pe server, și pe GitHub Pages sub-cale)
-  const logoUrl = new URL('logo.svg', location.href).href;
+  const logoUrl = new URL('logo.png', location.href).href;
   const line = (label, value) => (value ? `<div><b>${label}:</b> ${esc(value)}</div>` : '');
   const html = `<!DOCTYPE html>
 <html lang="ro">
