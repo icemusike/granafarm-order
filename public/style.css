@@ -506,7 +506,8 @@ h2 .step {
 .stat.accent-plum .icon  { background: #f3e5f5; border-color: #e1bee7; }
 
 .stat .label { font-size: 0.74rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
-.stat .value { font-family: var(--font-heading); font-size: 1.55rem; font-weight: 700; color: var(--charcoal); line-height: 1.2; }
+.stat .value { font-family: var(--font-heading); font-size: 1.5rem; font-weight: 700; color: var(--charcoal); line-height: 1.2; }
+.stat .value .stat-unit { font-size: 0.8rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
 
 .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; align-items: center; }
 
@@ -882,14 +883,79 @@ footer.site {
   color: var(--charcoal);
   margin: 0 0 14px;
 }
-.chart-card .chart-empty { color: var(--muted); text-align: center; padding: 40px 0; font-size: 0.9rem; }
+.chart-card .chart-empty { color: var(--muted); text-align: center; padding: 48px 0; font-size: 0.9rem; }
 
-.chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
-.chart-svg .bar { transition: opacity 0.15s ease; }
-.chart-svg .bar:hover { opacity: 0.75; }
-.chart-svg .axis-label { font-family: var(--font-body); font-size: 9px; fill: var(--muted); }
-.chart-svg .grid-line { stroke: var(--line); stroke-width: 1; }
-.chart-svg .bar-value { font-family: var(--font-body); font-size: 9px; fill: var(--charcoal-soft); font-weight: 700; }
+/* Grafic cu bare, construit din HTML/CSS (text crisp, fără probleme de scalare SVG) */
+.chart { position: relative; }
+.chart-max {
+  font-family: var(--font-heading);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.chart-body {
+  position: relative;
+  height: 168px;
+}
+.chart-grid { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between; z-index: 0; }
+.chart-grid span { display: block; height: 1px; background: var(--line); }
+.chart-cols {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  z-index: 1;
+}
+.chart-col {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  cursor: default;
+}
+.chart-val {
+  font-family: var(--font-heading);
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--charcoal-soft);
+  margin-bottom: 3px;
+  white-space: nowrap;
+}
+.chart-bar {
+  width: 62%;
+  max-width: 30px;
+  min-width: 3px;
+  border-radius: 5px 5px 0 0;
+  transition: filter 0.15s ease, transform 0.15s ease;
+  animation: barGrow 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: bottom;
+}
+.chart-bar-orders  { background: linear-gradient(180deg, var(--green-light), var(--green-dark)); }
+.chart-bar-revenue { background: linear-gradient(180deg, var(--gold-light), var(--gold-dark)); }
+.chart-col:hover .chart-bar { filter: brightness(1.08); transform: scaleY(1.02); }
+.chart-axis {
+  display: flex;
+  gap: 2px;
+  margin-top: 8px;
+  border-top: 0;
+}
+.chart-x {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+  font-size: 0.66rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.chart-x-hidden { visibility: hidden; }
+
+@keyframes barGrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 
 /* ======================================================= configurare === */
 

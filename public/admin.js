@@ -177,56 +177,64 @@ async function loadStats() {
 
 function renderStatsCards(stats) {
   document.getElementById('stats-period-hint').textContent = `Interval: ${ro(stats.from)} – ${ro(stats.to)}`;
+  const money = (v) => `${v.toFixed(2).replace('.', ',')}<span class="stat-unit"> lei</span>`;
   document.getElementById('stats').innerHTML = `
     <div class="stat accent-blue"><div class="icon">📦</div><div><div class="label">Comenzi în perioadă</div><div class="value">${stats.totalOrders}</div></div></div>
-    <div class="stat"><div class="icon">💰</div><div><div class="label">Valoare în perioadă</div><div class="value">${lei(stats.totalRevenue)}</div></div></div>
+    <div class="stat"><div class="icon">💰</div><div><div class="label">Valoare în perioadă</div><div class="value">${money(stats.totalRevenue)}</div></div></div>
     <div class="stat accent-amber"><div class="icon">📥</div><div><div class="label">Comenzi azi</div><div class="value">${stats.ordersToday}</div></div></div>
     <div class="stat accent-plum"><div class="icon">⏰</div><div><div class="label">Comenzi scadente</div><div class="value">${stats.ordersDue}</div></div></div>`;
 }
 
 function renderCharts(stats) {
   document.getElementById('chart-orders').innerHTML = buildBarChart(stats.series, {
-    valueKey: 'count', color: 'var(--green)', format: (v) => String(v),
+    valueKey: 'count', kind: 'orders', format: (v) => String(v),
   });
   document.getElementById('chart-revenue').innerHTML = buildBarChart(stats.series, {
-    valueKey: 'revenue', color: 'var(--gold)', format: (v) => (v % 1 === 0 ? String(v) : v.toFixed(1).replace('.', ',')),
+    valueKey: 'revenue', kind: 'revenue', format: fmtCompact,
   });
 }
 
-// Grafic simplu cu bare, în SVG (fără dependințe externe). Coordonatele sunt
-// procentuale (viewBox 100×40) ca să se întindă pe toată lățimea cardului.
-function buildBarChart(series, { valueKey, color, format }) {
+// Formatare compactă pentru valori mari pe grafic: 1.3k, 12k etc.
+function fmtCompact(v) {
+  if (v >= 1000) {
+    const k = v / 1000;
+    return (k >= 10 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, '')).toString().replace('.', ',') + 'k';
+  }
+  return (v % 1 === 0 ? String(v) : v.toFixed(0));
+}
+
+// Grafic cu bare din HTML/CSS — text crisp, gridlines, tooltip la hover.
+function buildBarChart(series, { valueKey, kind, format }) {
   if (!series || series.length === 0) return '<div class="chart-empty">Fără date pentru acest interval.</div>';
 
-  const W = 100, H = 40;
-  const padL = 1, padR = 1, padT = 4, padB = 7;
-  const plotW = W - padL - padR;
-  const plotH = H - padT - padB;
-  const maxVal = Math.max(1, ...series.map((d) => d[valueKey]));
   const n = series.length;
-  const gap = plotW / n;
-  const barW = Math.min(gap * 0.62, gap - 0.3);
+  const maxVal = Math.max(1, ...series.map((d) => d[valueKey]));
+  const showValues = n <= 14;
   const labelEvery = Math.max(1, Math.ceil(n / 8));
-  const showValues = n <= 12;
 
-  let bars = '';
-  let labels = '';
-  series.forEach((d, i) => {
-    const x = padL + i * gap + (gap - barW) / 2;
+  const cols = series.map((d) => {
     const val = d[valueKey];
-    const barH = val > 0 ? Math.max(H * 0.02, (val / maxVal) * plotH) : 0;
-    const y = padT + (plotH - barH);
+    const h = val > 0 ? Math.max(2.5, (val / maxVal) * 100) : 0;
     const dLbl = new Date(d.date + 'T00:00:00').toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit' });
-    bars += `<rect class="bar" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${barW.toFixed(2)}" height="${barH.toFixed(2)}" rx="0.6" fill="${color}"><title>${dLbl}: ${format(val)}</title></rect>`;
-    if (showValues && val > 0) {
-      labels += `<text class="bar-value" x="${(x + barW / 2).toFixed(2)}" y="${(y - 1).toFixed(2)}" text-anchor="middle">${format(val)}</text>`;
-    }
-    if (i % labelEvery === 0 || i === n - 1) {
-      labels += `<text class="axis-label" x="${(x + barW / 2).toFixed(2)}" y="${(H - 1.5).toFixed(2)}" text-anchor="middle">${dLbl}</text>`;
-    }
-  });
-  const baseline = `<line class="grid-line" x1="${padL}" y1="${(padT + plotH).toFixed(2)}" x2="${(W - padR).toFixed(2)}" y2="${(padT + plotH).toFixed(2)}"/>`;
-  return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}">${baseline}${bars}${labels}</svg>`;
+    const valEl = showValues && val > 0 ? `<span class="chart-val">${format(val)}</span>` : '';
+    const barEl = h > 0 ? `<div class="chart-bar chart-bar-${kind}" style="height:${h.toFixed(1)}%"></div>` : '';
+    return `<div class="chart-col" title="${dLbl}: ${format(val)}">${valEl}${barEl}</div>`;
+  }).join('');
+
+  const axis = series.map((d, i) => {
+    const dLbl = new Date(d.date + 'T00:00:00').toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit' });
+    const showLbl = i % labelEvery === 0 || i === n - 1;
+    return `<span class="chart-x ${showLbl ? '' : 'chart-x-hidden'}">${dLbl}</span>`;
+  }).join('');
+
+  return `<div class="chart">
+    <div class="chart-max">max ${format(maxVal)}</div>
+    <div class="chart-body">
+      <div class="chart-grid"><span></span><span></span><span></span><span></span></div>
+      <div class="chart-cols">${cols}</div>
+    </div>
+    <div class="chart-axis">${axis}</div>
+  </div>`;
 }
 
 document.getElementById('range-apply').onclick = () => {
