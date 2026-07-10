@@ -98,14 +98,9 @@
     .ov-name { font-family:var(--font-display); font-weight:700; font-size:20px; color:var(--text-heading); }
     .ov-tag { font-family:var(--font-mono); font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--amber-600); margin-top:4px; }
 
-    /* tomată desenată în CSS (folosită ca „specimen") */
-    .tomato { position:relative; flex:none; border-radius:50%;
-      background:radial-gradient(circle at 34% 30%, var(--t-hi,#ff8a72), var(--t,#c4302b) 58%, var(--t-lo,#8f221d) 100%);
-      box-shadow:inset -6px -8px 16px rgba(0,0,0,.22), inset 5px 6px 12px rgba(255,255,255,.28); }
-    .tomato::before { content:""; position:absolute; top:-7%; left:50%; transform:translateX(-50%);
-      width:34%; height:20%; background:var(--green-600);
-      clip-path:polygon(50% 0,64% 42%,100% 38%,72% 62%,84% 100%,50% 74%,16% 100%,28% 62%,0 38%,36% 42%); }
-    .ov-card .tomato { width:64px; height:64px; }
+    /* fotografia reală a soiului */
+    .variety-photo { flex:none; object-fit:cover; border-radius:18px; border:1px solid var(--border-subtle); box-shadow:var(--shadow-md); background:var(--cream-100); }
+    .ov-card .variety-photo { width:64px; height:64px; border-radius:12px; box-shadow:none; }
 
     /* ---- 5..13 · soiuri ---- */
     .variety { border-top:1px solid var(--border-subtle); }
@@ -113,7 +108,7 @@
     .variety:nth-child(even) .variety-in > * { direction:ltr; }
     .variety-in { max-width:1180px; margin:0 auto; display:grid; grid-template-columns:.85fr 1.15fr; align-items:center; gap:0; }
     .variety-visual { display:flex; align-items:center; justify-content:center; padding:56px 24px; min-height:340px; }
-    .variety-visual .tomato { width:min(280px,60vw); height:min(280px,60vw); }
+    .variety-visual .variety-photo { width:min(380px,78vw); height:min(380px,78vw); border-radius:24px; }
     .variety-body { padding:64px 24px 64px 48px; display:flex; flex-direction:column; gap:26px; }
     .variety-body .kicker { font-family:var(--font-mono); font-size:14px; letter-spacing:.1em; text-transform:uppercase; color:var(--green-600); }
     .variety-body h2 { font-size:clamp(36px,5vw,64px); font-weight:800; }
