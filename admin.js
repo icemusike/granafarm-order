@@ -265,12 +265,16 @@ function renderFilter() {
   });
 }
 
+function mapQuery(o) {
+  return encodeURIComponent(`${o.customer.address || ''}, ${o.customer.city || ''}, România`);
+}
+
 function renderOrders() {
   const el = document.getElementById('orders');
   const list = activeFilter === 'toate' ? orders : orders.filter((o) => o.status === activeFilter);
 
   if (list.length === 0) {
-    el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Nu există comenzi în această categorie.</div>';
+    el.innerHTML = '<div class="card empty-card">Nu există comenzi în această categorie.</div>';
     return;
   }
 
@@ -278,34 +282,35 @@ function renderOrders() {
   for (const o of list) {
     const card = document.createElement('div');
     card.className = 'order-card' + (expanded.has(o.id) ? ' open' : '');
+    const isOpen = expanded.has(o.id);
 
     const date = new Date(o.createdAt).toLocaleString('ro-RO', { dateStyle: 'medium', timeStyle: 'short' });
     const company = o.customer.company ? ` · ${esc(o.customer.company)}` : '';
+    const hasAddr = Boolean(o.customer.address || o.customer.city);
+    const q = mapQuery(o);
 
     card.innerHTML = `
       <div class="order-head">
+        <span class="onum">${esc(o.number)}</span>
         <div class="who">
-          <span class="name">${esc(o.number)} — ${esc(o.customer.name)}${company}</span>
-          <span class="meta">${TYPE_LABELS[o.customer.type] || 'Altul'} · ${date} · ${esc(o.customer.city)}</span>
+          <div class="name">${esc(o.customer.name)}${company}</div>
+          <div class="meta">${TYPE_LABELS[o.customer.type] || 'Altul'} · ${esc(o.customer.city || '')}</div>
         </div>
-        <div class="right">
-          <span class="total">${lei(o.total)}</span>
-          <span class="badge badge-${o.status}">${STATUS_LABELS[o.status]}</span>
-          <span class="chev">▼</span>
-        </div>
+        <span class="date">${date}</span>
+        <span class="total">${lei(o.total)}</span>
+        <span class="badge badge-${o.status}">${STATUS_LABELS[o.status]}</span>
+        <span class="chev">▼</span>
       </div>
-      <div class="order-body ${expanded.has(o.id) ? '' : 'hidden'}">
+      ${isOpen ? `<div class="order-body">
         <div>
           <h4>Produse comandate</h4>
-          <table>
-            ${o.items.map((i) => `<tr>
-              <td>${esc(i.name)}</td>
-              <td class="num">${i.qty} ${esc(i.unit)}</td>
-              <td class="num">${lei(i.price)}</td>
-              <td class="num">${lei(i.price * i.qty)}</td>
-            </tr>`).join('')}
-            <tr><td colspan="3" style="font-weight:700;">Total</td><td class="num" style="font-weight:700;">${lei(o.total)}</td></tr>
-          </table>
+          <div class="order-items">
+            ${o.items.map((i) => `<div class="it">
+              <span>${esc(i.name)} <span class="q">· ${i.qty} ${esc(i.unit)} × ${lei(i.price)}</span></span>
+              <span class="sub">${lei(i.price * i.qty)}</span>
+            </div>`).join('')}
+            <div class="grand"><span class="lbl">Total</span><span class="val">${lei(o.total)}</span></div>
+          </div>
         </div>
         <div>
           <h4>Date de livrare</h4>
@@ -316,40 +321,53 @@ function renderOrders() {
           ${o.customer.deliveryDate ? `<div class="detail-line"><b>Livrare dorită:</b> ${new Date(o.customer.deliveryDate + 'T00:00:00').toLocaleDateString('ro-RO', { dateStyle: 'long' })}</div>` : ''}
           ${o.customer.notes ? `<div class="detail-line"><b>Observații:</b> ${esc(o.customer.notes)}</div>` : ''}
           ${o.customer.marketingOptIn ? `<div class="detail-line">📣 Abonat la oferte prin email</div>` : ''}
+          ${hasAddr ? `<div class="order-map"><iframe title="Harta locație client" src="https://maps.google.com/maps?q=${q}&z=14&output=embed" loading="lazy"></iframe></div>
+          <a class="map-link" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener">Deschide în Google Maps ↗</a>` : ''}
         </div>
-        <div class="status-row">
-          <b>Schimbă statusul:</b>
-          <select data-status>
-            ${Object.entries(STATUS_LABELS).map(([v, l]) => `<option value="${v}" ${o.status === v ? 'selected' : ''}>${l}</option>`).join('')}
-          </select>
-          <span style="flex:1"></span>
+        <div class="order-actions">
+          <label class="status-select">
+            <span>Schimbă statusul</span>
+            <select data-status>
+              ${Object.entries(STATUS_LABELS).map(([v, l]) => `<option value="${v}" ${o.status === v ? 'selected' : ''}>${l}</option>`).join('')}
+            </select>
+          </label>
+          <span class="spacer"></span>
+          <button class="btn-small" data-print-prep>🖨️ Notă pregătire (seră)</button>
+          <button class="btn-small" data-print-label>🖨️ Etichetă client</button>
+          <button class="btn-small" data-print-aviz>🖨️ Aviz de expediție</button>
           ${o.invoiceNumber
-            ? `<button class="btn-small save" data-view-invoice>🧾 Vezi factura ${esc(o.invoiceNumber)}</button>`
-            : `<button class="btn-small save" data-make-invoice ${o.status === 'anulata' ? 'disabled' : ''}>🧾 Emite factura</button>`}
+            ? `<button class="btn-small save" data-view-invoice>Vezi factura ${esc(o.invoiceNumber)}</button>`
+            : `<button class="btn-small save" data-make-invoice ${o.status === 'anulata' ? 'disabled' : ''}>Emite factura</button>`}
         </div>
-      </div>`;
+      </div>` : ''}`;
 
     card.querySelector('.order-head').onclick = () => {
       if (expanded.has(o.id)) expanded.delete(o.id); else expanded.add(o.id);
       renderOrders();
     };
 
-    card.querySelector('[data-status]').onchange = async (e) => {
-      const res = await api(`/api/admin/orders/${o.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: e.target.value }),
-      });
-      if (res.ok) {
-        Object.assign(o, await res.json());
-        renderNavBadge();
-        renderFilter();
-        renderOrders();
-        if (statsLoadedOnce && !document.getElementById('section-statistici').classList.contains('hidden')) loadStats();
-        // confirmarea poate genera un SMS/email către client
-        api('/api/admin/sms-log').then((r) => r.json()).then((d) => { smsInfo = d; renderSmsLog(); });
-        api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
-      }
-    };
+    if (isOpen) {
+      card.querySelector('[data-print-prep]').onclick = (e) => { e.stopPropagation(); printPrepNote(o); };
+      card.querySelector('[data-print-label]').onclick = (e) => { e.stopPropagation(); printClientLabel(o); };
+      card.querySelector('[data-print-aviz]').onclick = (e) => { e.stopPropagation(); printAvizForOrders([o], 'Comanda ' + o.number); };
+
+      card.querySelector('[data-status]').onchange = async (e) => {
+        const res = await api(`/api/admin/orders/${o.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: e.target.value }),
+        });
+        if (res.ok) {
+          Object.assign(o, await res.json());
+          renderNavBadge();
+          renderFilter();
+          renderOrders();
+          if (statsLoadedOnce && !document.getElementById('section-statistici').classList.contains('hidden')) loadStats();
+          // confirmarea poate genera un SMS/email către client
+          api('/api/admin/sms-log').then((r) => r.json()).then((d) => { smsInfo = d; renderSmsLog(); });
+          api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
+        }
+      };
+    }
 
     const makeBtn = card.querySelector('[data-make-invoice]');
     if (makeBtn) {
@@ -378,6 +396,82 @@ function renderOrders() {
 
     el.appendChild(card);
   }
+}
+
+// --- printare: aviz de expediție / notă pregătire / etichetă client -----------
+
+function printWindow(title, bodyHtml) {
+  const win = window.open('', '_blank');
+  if (!win) { alert('Permiteți ferestrele pop-up pentru a printa.'); return; }
+  win.document.write(`<!DOCTYPE html><html lang="ro"><head><meta charset="UTF-8"><title>${esc(title)}</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Instrument+Sans:wght@400;600;700&family=Spline+Sans+Mono:wght@500;600&display=swap');
+      body { font-family: 'Instrument Sans', system-ui, sans-serif; color: #22302A; margin: 36px auto; max-width: 640px; padding: 0 20px; }
+      h1 { font-family: 'Bricolage Grotesque', sans-serif; font-size: 1.5rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+      .sub { color: #6B6853; font-size: 0.92rem; margin: 0 0 22px; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.95rem; margin-bottom: 18px; }
+      th, td { padding: 9px 6px; border-bottom: 1px solid #E7E1D0; text-align: left; }
+      th { font-family: 'Spline Sans Mono', monospace; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #6B6853; }
+      .num { text-align: right; white-space: nowrap; }
+      .grand td { font-weight: 800; border-top: 2px solid #C77E00; border-bottom: none; }
+      .meta { font-size: 0.95rem; line-height: 1.7; }
+      .print-btn { position: fixed; top: 16px; right: 16px; background: #3E7524; color: #fff; border: none; border-radius: 10px; padding: 12px 22px; font-size: 0.92rem; font-weight: 700; font-family: 'Instrument Sans', sans-serif; cursor: pointer; }
+      @media print { .print-btn { display: none; } body { margin: 0 auto; } }
+    </style></head><body>
+    <button class="print-btn" onclick="window.print()">🖨️ Printează</button>
+    ${bodyHtml}
+    </body></html>`);
+  win.document.close();
+}
+
+function printPrepNote(o) {
+  const rows = o.items.map((i) => `<tr><td>${esc(i.name)}</td><td class="num">${i.qty} ${esc(i.unit)}</td></tr>`).join('');
+  printWindow('Notă pregătire ' + o.number, `
+    <h1>Notă de pregătire — ${esc(o.number)}</h1>
+    <p class="sub">Doar produse și cantități, pentru pregătire în seră. Nu conține prețuri.</p>
+    <div class="meta"><b>Client:</b> ${esc(o.customer.name)}${o.customer.company ? ' · ' + esc(o.customer.company) : ''}
+      ${o.customer.deliveryDate ? `<br><b>Livrare dorită:</b> ${new Date(o.customer.deliveryDate + 'T00:00:00').toLocaleDateString('ro-RO', { dateStyle: 'long' })}` : ''}</div>
+    <table style="margin-top:16px;"><thead><tr><th>Produs</th><th class="num">Cantitate</th></tr></thead><tbody>${rows}</tbody></table>
+    ${o.customer.notes ? `<p class="sub"><b>Observații:</b> ${esc(o.customer.notes)}</p>` : ''}`);
+}
+
+function printClientLabel(o) {
+  const rows = o.items.map((i) => `<tr><td>${esc(i.name)}</td><td class="num">${i.qty} ${esc(i.unit)}</td><td class="num">${lei(i.price)}</td><td class="num">${lei(i.qty * i.price)}</td></tr>`).join('');
+  printWindow('Etichetă comandă ' + o.number, `
+    <h1>Comanda ${esc(o.number)}</h1>
+    <p class="sub">Etichetă client — rămâne la client odată cu comanda.</p>
+    <div class="meta">
+      <div><b>Client:</b> ${esc(o.customer.name)}${o.customer.company ? ' · ' + esc(o.customer.company) : ''}</div>
+      <div><b>Adresă:</b> ${esc(o.customer.address)}, ${esc(o.customer.city)}</div>
+      <div><b>Telefon:</b> ${esc(o.customer.phone)}</div>
+    </div>
+    <table style="margin-top:16px;"><thead><tr><th>Produs</th><th class="num">Cant.</th><th class="num">Preț</th><th class="num">Valoare</th></tr></thead>
+    <tbody>${rows}<tr class="grand"><td colspan="3">Total de plată</td><td class="num">${lei(o.total)}</td></tr></tbody></table>
+    <p class="sub">GranaFarm — mulțumim pentru comandă!</p>`);
+}
+
+function printAvizForOrders(list, heading) {
+  if (!list.length) { alert('Nu există comenzi pentru acest aviz.'); return; }
+  const rows = list.map((o) => `<tr>
+    <td>${esc(o.number)}</td>
+    <td>${esc(o.customer.name)}${o.customer.company ? ' · ' + esc(o.customer.company) : ''}</td>
+    <td>${esc(o.customer.address)}, ${esc(o.customer.city)}</td>
+    <td>${esc(o.customer.phone)}</td>
+    <td class="num">${lei(o.total)}</td>
+  </tr>`).join('');
+  printWindow('Aviz de expediție', `
+    <h1>Aviz de expediție</h1>
+    <p class="sub">${esc(heading)} · ${list.length} ${list.length === 1 ? 'comandă' : 'comenzi'}</p>
+    <table><thead><tr><th>Comandă</th><th>Client</th><th>Adresă</th><th>Telefon</th><th class="num">Valoare</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="meta" style="margin-top:28px;"><div>Semnătura predare: ______________________</div><div style="margin-top:14px;">Semnătura primire: ______________________</div></div>`);
+}
+
+function printAvizToday() {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const todays = orders.filter((o) => o.status !== 'anulata' &&
+    (o.createdAt.slice(0, 10) === todayIso || (o.customer.deliveryDate && o.customer.deliveryDate === todayIso)));
+  printAvizForOrders(todays, 'Comenzile din ziua de azi (' + new Date().toLocaleDateString('ro-RO', { dateStyle: 'long' }) + ')');
 }
 
 // --- facturi -------------------------------------------------------------------
@@ -627,6 +721,8 @@ function renderSettings() {
     const input = document.getElementById('s-' + f);
     if (input) input.value = settings[f] ?? '';
   }
+  const co = document.getElementById('sidebar-company');
+  if (co && settings.companyName) co.textContent = settings.companyName;
 
   const pm = settings.postmark || {};
   document.getElementById('pm-enabled').checked = Boolean(pm.enabled);
@@ -894,6 +990,7 @@ document.getElementById('password').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') login();
 });
 document.getElementById('refresh-btn').onclick = loadAll;
+document.getElementById('aviz-today-btn').onclick = printAvizToday;
 document.getElementById('save-settings-btn').onclick = saveCompanySettings;
 document.getElementById('save-postmark-btn').onclick = savePostmark;
 document.getElementById('test-email-btn').onclick = sendTestEmail;
