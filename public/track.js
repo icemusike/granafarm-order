@@ -88,6 +88,17 @@ function renderOrder(order, token) {
   `).join('') || '<p>Detaliile produselor nu sunt disponibile.</p>';
   $('tracking-subtotal').textContent = money(order.subtotal);
   $('tracking-fee').textContent = number(order.deliveryFee) === 0 ? 'Gratuită' : money(order.deliveryFee);
+  // discountul apare scăzut înainte de total
+  const discountRow = $('tracking-discount-row');
+  if (discountRow) {
+    if (number(order.discountAmount) > 0) {
+      discountRow.classList.remove('hidden');
+      discountRow.querySelector('dt').textContent = order.discountLabel || 'Discount';
+      $('tracking-discount').textContent = '−' + money(order.discountAmount);
+    } else {
+      discountRow.classList.add('hidden');
+    }
+  }
   $('tracking-total').textContent = money(order.total);
 
   if (order.canReorder) {

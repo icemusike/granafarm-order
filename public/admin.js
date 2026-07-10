@@ -288,6 +288,9 @@ function orderBodyHtml(o) {
               <td class="num">${lei(i.price)}</td>
               <td class="num">${lei(i.price * i.qty)}</td>
             </tr>`).join('')}
+            ${o.discountAmount > 0 ? `
+            <tr><td colspan="3">Subtotal</td><td class="num">${lei((o.subtotal || 0) + (o.deliveryFee || 0))}</td></tr>
+            <tr><td colspan="3" style="color:var(--green-dark); font-weight:600;">${o.discount && o.discount.type === 'percent' ? `Discount ${o.discount.value}%` : 'Discount'}</td><td class="num" style="color:var(--green-dark); font-weight:600;">−${lei(o.discountAmount)}</td></tr>` : ''}
             <tr><td colspan="3" style="font-weight:700;">Total</td><td class="num" style="font-weight:700;">${lei(o.total)}</td></tr>
           </table>
         </div>
@@ -350,6 +353,16 @@ function orderEditHtml(o) {
             </tr>`).join('')}
             <tr><td colspan="3" style="font-weight:700;">Total nou</td><td class="num" style="font-weight:700;" data-e-total>${lei(o.total)}</td></tr>
           </table>
+          <h4 style="margin-top:16px;">Discount</h4>
+          <div class="discount-edit">
+            <select data-e-discount-type>
+              <option value="" ${!o.discount ? 'selected' : ''}>Fără discount</option>
+              <option value="percent" ${o.discount && o.discount.type === 'percent' ? 'selected' : ''}>Procent (%)</option>
+              <option value="amount" ${o.discount && o.discount.type === 'amount' ? 'selected' : ''}>Sumă fixă (lei)</option>
+            </select>
+            <input type="number" min="0" step="0.5" data-e-discount-value value="${o.discount ? o.discount.value : ''}" placeholder="ex: 10" ${!o.discount ? 'disabled' : ''} style="width:110px;">
+            <span class="discount-hint" data-e-discount-hint>${o.discountAmount > 0 ? '−' + lei(o.discountAmount) : ''}</span>
+          </div>
           <div data-edit-msg></div>
           <div class="actions" style="margin-top:12px;">
             <button class="btn-small save" data-save-edit>💾 Salvează modificările</button>
@@ -447,20 +460,34 @@ function renderOrders() {
 
     // --- mod editare ---
     if (editing) {
-      // subtotalurile se actualizează live la modificarea cantităților
-      card.querySelectorAll('[data-e-qty]').forEach((input) => {
-        input.oninput = () => {
-          let total = 0;
-          o.items.forEach((item, idx) => {
-            const qtyInput = card.querySelector(`[data-e-qty="${idx}"]`);
-            const qty = Math.max(0, Number(qtyInput.value) || 0);
-            const sub = item.price * qty;
-            total += sub;
-            card.querySelector(`[data-e-sub="${idx}"]`).textContent = lei(sub);
-          });
-          card.querySelector('[data-e-total]').textContent = lei(total + (o.deliveryFee || 0));
-        };
-      });
+      // subtotalurile, discountul și totalul se actualizează live
+      const discountTypeEl = card.querySelector('[data-e-discount-type]');
+      const discountValueEl = card.querySelector('[data-e-discount-value]');
+      const recalc = () => {
+        let subtotal = 0;
+        o.items.forEach((item, idx) => {
+          const qty = Math.max(0, Number(card.querySelector(`[data-e-qty="${idx}"]`).value) || 0);
+          const sub = item.price * qty;
+          subtotal += sub;
+          card.querySelector(`[data-e-sub="${idx}"]`).textContent = lei(sub);
+        });
+        const fee = o.deliveryFee || 0;
+        const dType = discountTypeEl.value;
+        const dValue = Math.max(0, Number(discountValueEl.value) || 0);
+        let discountAmount = 0;
+        if (dType === 'percent') discountAmount = subtotal * Math.min(dValue, 100) / 100;
+        else if (dType === 'amount') discountAmount = dValue;
+        discountAmount = Math.min(discountAmount, subtotal + fee);
+        card.querySelector('[data-e-discount-hint]').textContent = discountAmount > 0 ? '−' + lei(discountAmount) : '';
+        card.querySelector('[data-e-total]').textContent = lei(Math.max(0, subtotal + fee - discountAmount));
+      };
+      card.querySelectorAll('[data-e-qty]').forEach((input) => { input.oninput = recalc; });
+      discountTypeEl.onchange = () => {
+        discountValueEl.disabled = !discountTypeEl.value;
+        if (!discountTypeEl.value) discountValueEl.value = '';
+        recalc();
+      };
+      discountValueEl.oninput = recalc;
 
       card.querySelector('[data-cancel-edit]').onclick = (e) => {
         e.stopPropagation();
@@ -471,6 +498,8 @@ function renderOrders() {
       card.querySelector('[data-save-edit]').onclick = async (e) => {
         e.stopPropagation();
         const val = (key) => card.querySelector(`[data-e="${key}"]`).value.trim();
+        const dType = card.querySelector('[data-e-discount-type]').value;
+        const dValue = Number(card.querySelector('[data-e-discount-value]').value) || 0;
         const payload = {
           customer: {
             name: val('name'), company: val('company'), cui: val('cui'),
@@ -479,6 +508,7 @@ function renderOrders() {
           },
           deliveryDate: val('deliveryDate'),
           items: o.items.map((_, idx) => ({ qty: Number(card.querySelector(`[data-e-qty="${idx}"]`).value) || 0 })),
+          discount: dType && dValue > 0 ? { type: dType, value: dValue } : null,
         };
         const btn = card.querySelector('[data-save-edit]');
         btn.disabled = true;
