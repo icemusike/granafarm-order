@@ -1015,6 +1015,16 @@ footer.site {
 .status-pill.off { background: var(--light-gray); color: var(--muted); }
 .status-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
+.email-tpl-sub {
+  font-family: var(--font-heading);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--green-dark);
+  margin: 22px 0 12px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line);
+}
+
 .token-legend {
   display: flex;
   flex-wrap: wrap;

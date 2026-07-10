@@ -227,6 +227,40 @@
           </div>
         </div>
 
+        <div class="card settings-card">
+          <h3>🎨 Design și text email</h3>
+          <p class="settings-desc">Personalizați subiectul și textul emailurilor. Textul este redat automat într-un layout HTML cu logo-ul firmei. Aceleași token-uri ca la SMS.</p>
+          <div class="token-legend">
+            <code>{number}</code><code>{name}</code><code>{company}</code><code>{total}</code><code>{city}</code><code>{phone}</code><code>{deliveryDate}</code>
+          </div>
+
+          <div class="switch-row">
+            <div>
+              <div class="switch-label">Atașează factura PDF la emailul de confirmare</div>
+              <div class="switch-hint">Când confirmați o comandă care are deja factură emisă, PDF-ul se atașează automat clientului.</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="et-attachInvoice"><span class="slider"></span></label>
+          </div>
+
+          <h4 class="email-tpl-sub">✅ Email către client — „Comandă confirmată"</h4>
+          <div class="field"><label for="et-clientSubject">Subiect</label><input id="et-clientSubject" type="text"></div>
+          <div class="field" style="margin-top:12px;"><label for="et-clientHeading">Titlu afișat în email</label><input id="et-clientHeading" type="text"></div>
+          <div class="field" style="margin-top:12px;"><label for="et-clientBody">Mesaj (mai multe rânduri devin paragrafe)</label><textarea id="et-clientBody" class="template-input" rows="5"></textarea></div>
+
+          <h4 class="email-tpl-sub">📦 Email către dvs. — „Comandă nouă"</h4>
+          <div class="field"><label for="et-ownerSubject">Subiect</label><input id="et-ownerSubject" type="text"></div>
+          <div class="field" style="margin-top:12px;"><label for="et-ownerHeading">Titlu afișat în email</label><input id="et-ownerHeading" type="text"></div>
+          <div class="field" style="margin-top:12px;"><label for="et-ownerBody">Mesaj</label><textarea id="et-ownerBody" class="template-input" rows="4"></textarea></div>
+
+          <h4 class="email-tpl-sub">Subsol email</h4>
+          <div class="field"><label for="et-footer">Text subsol (footer)</label><input id="et-footer" type="text"></div>
+
+          <div id="email-tpl-msg"></div>
+          <div class="actions">
+            <button class="btn btn-primary" id="save-email-tpl-btn">Salvează textele email</button>
+          </div>
+        </div>
+
         <h2 style="margin-top:34px;">📨 Jurnal email</h2>
         <p class="section-hint" id="email-provider-hint"></p>
         <div id="email-log"></div>

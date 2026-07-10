@@ -35,7 +35,17 @@ Protejat cu parolă, organizat pe secțiuni cu navigare:
 - **Comandă nouă** → SMS + email către proprietar (se setează în Configurare → Date firmă)
 - **Comandă confirmată** → SMS + email către client, trimise automat (o singură dată) când schimbați statusul în „Confirmată"
 
-Textul mesajelor SMS este editabil din **Configurare → Șabloane SMS**, cu token-uri `{number} {name} {company} {total} {city} {phone} {deliveryDate}`.
+Textul mesajelor SMS este editabil din **Configurare → Șabloane SMS**, iar textul emailurilor din **Configurare → Design și text email** (subiect, titlu, mesaj, subsol), cu aceleași token-uri `{number} {name} {company} {total} {city} {phone} {deliveryDate}`.
+
+### Email HTML cu logo și factură PDF
+
+Emailurile sunt trimise ca **HTML cu identitatea vizuală GranaFarm**: logo-ul firmei (atașat inline), sumarul comenzii și un subsol, totul redat automat dintr-un layout branduit — proprietarul controlează doar textul, fără să scrie HTML.
+
+**Factura fiscală se atașează ca PDF**:
+- La confirmarea unei comenzi care are deja factură emisă, PDF-ul se atașează automat emailului către client (comutator în „Design și text email").
+- Din secțiunea **Facturi**, fiecare factură are butoane **📄 PDF** (descarcă / vizualizează) și **✉️ Email** (trimite clientului cu PDF-ul atașat).
+
+PDF-urile sunt generate pe server cu diacritice românești corecte (font DejaVu Sans inclus în `assets/fonts/`), fără dependințe de browser.
 
 Integrările se pot configura **fie din panoul de administrare** (Configurare → Email, Integrări → Twilio — recomandat, nu necesită redeploy), **fie prin variabile de mediu** pe host (utile ca fallback):
 
@@ -151,6 +161,9 @@ lib/storage.js          — alege backend-ul (Postgres sau JSON)
 lib/storage-postgres.js — stocare PostgreSQL (producție)
 lib/storage-json.js     — stocare fișier JSON (dezvoltare)
 lib/seed.js             — catalogul și setările inițiale
+lib/invoice-pdf.js      — generarea facturii ca PDF (pdfkit)
+lib/email-template.js   — layout-ul HTML branduit al emailurilor
+assets/fonts/           — font DejaVu Sans (diacritice românești în PDF)
 public/                 — interfața (pagina de comandă, panou admin, stiluri, logo)
 demo/demo-api.js        — adaptor localStorage pentru demo-ul static (GitHub Pages)
 railway.json           — configurație publicare Railway (recomandat)

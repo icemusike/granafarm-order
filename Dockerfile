@@ -14,6 +14,7 @@ RUN node -e "require.resolve('express'); require.resolve('pg')"
 COPY server.js ./
 COPY lib ./lib
 COPY public ./public
+COPY assets ./assets
 
 EXPOSE 3000
 

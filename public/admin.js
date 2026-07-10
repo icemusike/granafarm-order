@@ -399,7 +399,11 @@ function renderInvoices() {
             <td>${esc(inv.buyer.name)}</td>
             <td>${esc(inv.orderNumber)}</td>
             <td class="num"><b>${lei(inv.total)}</b></td>
-            <td><button class="btn-small save" data-inv="${inv.id}">Vezi / Printează</button></td>
+            <td style="white-space:nowrap;">
+              <button class="btn-small save" data-inv="${inv.id}">Vezi</button>
+              <button class="btn-small" data-inv-pdf="${inv.id}">📄 PDF</button>
+              <button class="btn-small" data-inv-email="${inv.id}">✉️ Email</button>
+            </td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -407,6 +411,43 @@ function renderInvoices() {
   el.querySelectorAll('[data-inv]').forEach((btn) => {
     btn.onclick = () => openInvoice(invoices.find((i) => i.id === btn.dataset.inv));
   });
+  el.querySelectorAll('[data-inv-pdf]').forEach((btn) => {
+    btn.onclick = () => downloadInvoicePdf(btn.dataset.invPdf, btn);
+  });
+  el.querySelectorAll('[data-inv-email]').forEach((btn) => {
+    btn.onclick = () => emailInvoice(invoices.find((i) => i.id === btn.dataset.invEmail));
+  });
+}
+
+async function downloadInvoicePdf(id, btn) {
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const res = await api(`/api/admin/invoices/${id}/pdf`);
+    if (!res.ok) { alert('Nu s-a putut genera PDF-ul facturii.'); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
+async function emailInvoice(inv) {
+  if (!inv) return;
+  let to = inv.buyer.email;
+  if (to) {
+    if (!confirm(`Trimitem factura ${inv.number} pe email către ${to}?`)) return;
+  } else {
+    to = prompt('Clientul nu are email salvat. Introduceți adresa de email a clientului:');
+    if (!to || !to.trim()) return;
+  }
+  const res = await api(`/api/admin/invoices/${inv.id}/email`, { method: 'POST', body: JSON.stringify({ to: to.trim() }) });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Trimiterea email-ului a eșuat.'); return; }
+  alert(`Factura ${inv.number}: email ${data.status} către ${data.to}.`);
+  api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
 }
 
 // Deschide factura într-o fereastră nouă, gata de printat / salvat ca PDF
@@ -511,7 +552,7 @@ function openInvoice(inv) {
 
 // --- jurnal SMS / email ------------------------------------------------------------------
 
-const SMS_KIND_LABELS = { comanda_noua: 'Comandă nouă → proprietar', confirmare: 'Confirmare → client', test: 'Test' };
+const SMS_KIND_LABELS = { comanda_noua: 'Comandă nouă → proprietar', confirmare: 'Confirmare → client', factura: 'Factură → client', test: 'Test' };
 const STATUS_BADGE = { trimis: 'badge-livrata', simulat: 'badge-confirmata', eroare: 'badge-anulata' };
 
 function renderSmsLog() {
@@ -599,6 +640,13 @@ function renderSettings() {
   document.getElementById('tpl-ownerNewOrder').value = tpl.ownerNewOrder || '';
   document.getElementById('tpl-clientConfirmed').value = tpl.clientConfirmed || '';
 
+  const et = settings.emailTemplates || {};
+  document.getElementById('et-attachInvoice').checked = et.attachInvoice !== false;
+  EMAIL_TPL_FIELDS.forEach((k) => {
+    const elx = document.getElementById('et-' + k);
+    if (elx) elx.value = et[k] || '';
+  });
+
   const tw = settings.twilio || {};
   document.getElementById('tw-accountSid').value = tw.accountSid || '';
   document.getElementById('tw-authToken').value = tw.authToken || '';
@@ -666,6 +714,14 @@ async function saveTemplates() {
     },
   };
   await saveSettingsPatch(payload, 'templates-msg', 'Șabloanele au fost salvate.');
+}
+
+const EMAIL_TPL_FIELDS = ['clientSubject', 'clientHeading', 'clientBody', 'ownerSubject', 'ownerHeading', 'ownerBody', 'footer'];
+
+async function saveEmailTemplates() {
+  const et = { attachInvoice: document.getElementById('et-attachInvoice').checked };
+  EMAIL_TPL_FIELDS.forEach((k) => { et[k] = document.getElementById('et-' + k).value; });
+  await saveSettingsPatch({ emailTemplates: et }, 'email-tpl-msg', 'Textele email au fost salvate.');
 }
 
 async function saveTwilio() {
@@ -835,6 +891,7 @@ document.getElementById('test-email-btn').onclick = sendTestEmail;
 document.getElementById('mk-enabled').onchange = saveMarketing;
 document.getElementById('export-marketing-btn').onclick = exportMarketing;
 document.getElementById('save-templates-btn').onclick = saveTemplates;
+document.getElementById('save-email-tpl-btn').onclick = saveEmailTemplates;
 document.getElementById('save-twilio-btn').onclick = saveTwilio;
 document.getElementById('test-sms-btn').onclick = sendTestSms;
 document.getElementById('add-product-btn').onclick = () => {
