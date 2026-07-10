@@ -969,13 +969,61 @@ function loadGoogleMaps(apiKey) {
   if (window.__granaMapsPromise) return window.__granaMapsPromise;
   window.__granaMapsPromise = new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&language=ro&region=RO`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&language=ro&region=RO`;
     script.async = true;
     script.onload = () => resolve(window.google.maps);
     script.onerror = () => reject(new Error('Harta Google nu a putut fi încărcată.'));
     document.head.appendChild(script);
   });
   return window.__granaMapsPromise;
+}
+
+// Autocomplete Google Places pe câmpul de căutare a adresei: clientul caută
+// adresa, iar pinul, adresa și localitatea se completează automat.
+function setupMapSearch() {
+  const input = $('map-search');
+  if (!input) return;
+  const mapsConfig = state.config.maps || {};
+  if (!mapsConfig.enabled || !mapsConfig.apiKey) {
+    input.closest('.map-search-wrap')?.classList.add('hidden');
+    return;
+  }
+  input.closest('.map-search-wrap')?.classList.remove('hidden');
+
+  let attached = false;
+  input.addEventListener('focus', async () => {
+    if (attached) return;
+    attached = true;
+    try {
+      const maps = await loadGoogleMaps(mapsConfig.apiKey);
+      const autocomplete = new maps.places.Autocomplete(input, {
+        componentRestrictions: { country: 'ro' },
+        fields: ['geometry', 'formatted_address', 'place_id', 'address_components'],
+      });
+      autocomplete.addListener('place_changed', async () => {
+        const place = autocomplete.getPlace();
+        if (!place || !place.geometry || !place.geometry.location) return;
+        const point = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
+        // completăm adresa și localitatea din rezultat
+        if (place.formatted_address) $('c-address').value = place.formatted_address;
+        const cityComponent = (place.address_components || []).find((c) => c.types.includes('locality'))
+          || (place.address_components || []).find((c) => c.types.includes('administrative_area_level_2'));
+        if (cityComponent) $('c-city').value = cityComponent.long_name;
+        validateField('c-address', true);
+        validateField('c-city', true);
+        // deschidem harta și punem pinul exact pe locul găsit
+        await openDeliveryMap();
+        if (state.map) {
+          state.map.setZoom(17);
+          placeDeliveryMarker(point, false);
+          setDeliveryLocation({ ...point, formattedAddress: place.formatted_address || '', placeId: place.place_id || '' });
+          $('delivery-map-status').textContent = 'Pinul a fost plasat pe adresa căutată — îl poți muta dacă e nevoie.';
+        }
+      });
+    } catch {
+      // fără autocomplete, câmpul rămâne un simplu text
+    }
+  }, { once: false });
 }
 
 async function openDeliveryMap() {
@@ -1161,6 +1209,7 @@ async function init() {
     state.collapsed = new Set(categoryNames().slice(1));
     state.config = normalizeConfig(config);
     populateDeliveryControls();
+    setupMapSearch();
     reconcileCart();
 
     const profile = loadSavedProfile();

@@ -74,8 +74,11 @@ function redactTrackingTokens(value) {
 }
 
 // Config Twilio activă: setările din panou (Integrări) au prioritate față de variabilele de mediu.
+// Comutatorul twilio.enabled este poarta generală: oprit (implicit) => mod
+// simulat, indiferent de credențiale — pornit doar după aprobarea numărului.
 function getTwilioConfig(settings) {
   const t = settings.twilio || {};
+  if (t.enabled !== true) return null;
   if (t.accountSid && t.authToken && t.fromNumber) {
     return { sid: t.accountSid, token: t.authToken, from: t.fromNumber, source: 'settings' };
   }
@@ -183,19 +186,32 @@ function renderSmsTemplate(tpl, order, extra = {}) {
     .replace(/\{trackingUrl\}/g, extra.trackingUrl || '');
 }
 
+// Adresele care primesc emailul de „comandă nouă": emailul proprietarului
+// plus lista suplimentară pentru administratori (separate prin virgulă).
+function newOrderRecipients(settings) {
+  const extra = String(settings.notificationEmails || '')
+    .split(/[,;\n]/)
+    .map((email) => email.trim())
+    .filter((email) => email && isValidEmail(email));
+  return [...new Set([settings.ownerEmail, ...extra].filter(Boolean).map((e) => e.toLowerCase()))];
+}
+
 async function notifyOwnerNewOrder(order) {
   const settings = await storage.getSettings();
   if (settings.ownerPhone) {
     const body = renderSmsTemplate(settings.smsTemplates.ownerNewOrder, order);
     await sendSms(settings, settings.ownerPhone, body, 'comanda_noua');
   }
-  if (settings.ownerEmail) {
+  const recipients = newOrderRecipients(settings);
+  if (recipients.length > 0) {
     const company = order.customer.company ? ` (${order.customer.company})` : '';
     const text =
       `Comandă nouă ${order.number} de la ${order.customer.name}${company}.\n\n` +
       `Total: ${order.total.toFixed(2)} lei\nLivrare în: ${order.customer.city}\n` +
       `Telefon client: ${order.customer.phone}`;
-    await sendEmail(settings, { to: settings.ownerEmail, kind: 'comanda_noua', subject: `Comandă nouă ${order.number} — GranaFarm`, text });
+    for (const to of recipients) {
+      await sendEmail(settings, { to, kind: 'comanda_noua', subject: `Comandă nouă ${order.number} — GranaFarm`, text });
+    }
   }
 }
 
@@ -348,7 +364,12 @@ function normalizeOrderingConfig(settings) {
     ? String(raw.cutoffTime)
     : fallback.cutoffTime;
 
-  const mapsApiKey = String(process.env.GOOGLE_MAPS_BROWSER_API_KEY || process.env.GOOGLE_MAPS_API_KEY || '').trim();
+  // Cheia Google Maps: setarea din panou (Integrări) are prioritate; altfel
+  // variabilele de mediu.
+  const mapsApiKey = String(
+    (settings && settings.maps && settings.maps.apiKey)
+    || process.env.GOOGLE_MAPS_BROWSER_API_KEY || process.env.GOOGLE_MAPS_API_KEY || ''
+  ).trim();
   return {
     deliveryZones,
     deliveryWindows,
@@ -1076,6 +1097,13 @@ app.put('/api/admin/settings', requireAdmin, asyncRoute(async (req, res) => {
       if (body[key] && typeof body[key] === 'object') next[key] = { ...current[key], ...body[key] };
     } else {
       next[key] = String(body[key]).trim();
+    }
+  }
+  if ('notificationEmails' in body) {
+    const invalid = String(next.notificationEmails || '')
+      .split(/[,;\n]/).map((e) => e.trim()).filter((e) => e && !isValidEmail(e));
+    if (invalid.length) {
+      return res.status(400).json({ error: `Adrese de email invalide: ${invalid.join(', ')}` });
     }
   }
   if (!next.companyName) return res.status(400).json({ error: 'Denumirea firmei este obligatorie.' });
