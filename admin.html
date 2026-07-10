@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GranaFarm — Administrare comenzi</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <div class="brand">
+        <img class="brand-logo" src="logo.png" alt="GranaFarm">
+        <p class="brand-tag"><span class="admin-tag">Administrare</span> · Gestionarea comenzilor și a catalogului</p>
+      </div>
+      <a class="header-link" href="index.html">Pagina de comandă</a>
+    </div>
+  </header>
+
+  <main>
+    <!-- Autentificare -->
+    <div id="login-section" class="card login-box">
+      <div class="lock">🔒</div>
+      <h2>Autentificare</h2>
+      <div class="field">
+        <label for="password">Parola de administrare</label>
+        <input id="password" type="password" placeholder="Introduceți parola">
+      </div>
+      <div id="login-msg"></div>
+      <button class="btn btn-primary" id="login-btn" style="width: 100%;">Intră în cont</button>
+    </div>
+
+    <!-- Panou -->
+    <div id="dashboard-section" class="hidden">
+      <nav class="admin-nav" id="admin-nav">
+        <button class="nav-tab" data-section="comenzi">📋 Comenzi <span class="badge-count hidden" id="nav-orders-count"></span></button>
+        <button class="nav-tab" data-section="statistici">📊 Statistici</button>
+        <button class="nav-tab" data-section="produse">🥕 Produse</button>
+        <button class="nav-tab" data-section="facturi">🧾 Facturi</button>
+        <button class="nav-tab" data-section="configurare">⚙️ Configurare</button>
+        <button class="nav-tab" data-section="integrari">🔌 Integrări</button>
+      </nav>
+
+      <!-- ===================================================== Comenzi === -->
+      <section class="admin-section" id="section-comenzi">
+        <h2>📋 Comenzi</h2>
+        <div class="toolbar" id="status-filter"></div>
+        <div id="orders"></div>
+      </section>
+
+      <!-- ================================================= Statistici === -->
+      <section class="admin-section hidden" id="section-statistici">
+        <h2>📊 Statistici</h2>
+        <p class="section-hint">Alegeți intervalul de timp pentru a vedea comenzile și valoarea vânzărilor. Comenzile anulate nu sunt incluse în calcule.</p>
+
+        <div class="range-bar" id="range-bar"></div>
+        <div class="custom-range" id="custom-range">
+          <div class="field" style="margin:0;">
+            <label for="range-from">De la</label>
+            <input type="date" id="range-from">
+          </div>
+          <div class="field" style="margin:0;">
+            <label for="range-to">Până la</label>
+            <input type="date" id="range-to">
+          </div>
+          <button class="btn-small save" id="range-apply" style="align-self:flex-end;">Aplică</button>
+        </div>
+        <p class="stats-hint" id="stats-period-hint"></p>
+
+        <div class="stats" id="stats"></div>
+
+        <div class="charts-grid">
+          <div class="chart-card">
+            <h4>Comenzi pe zi</h4>
+            <div id="chart-orders"></div>
+          </div>
+          <div class="chart-card">
+            <h4>Valoare pe zi (lei)</h4>
+            <div id="chart-revenue"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================== Produse === -->
+      <section class="admin-section hidden" id="section-produse">
+        <h2>🥕 Produse și prețuri</h2>
+        <p class="section-hint">Modificați prețurile sau disponibilitatea, apoi apăsați „Salvează" pe rândul respectiv. Produsele marcate ca indisponibile nu apar pe pagina de comandă.</p>
+        <div id="products-msg"></div>
+        <div class="table-wrap card" style="padding: 0;">
+          <table class="admin">
+            <thead>
+              <tr>
+                <th>Produs</th>
+                <th>Descriere</th>
+                <th>Categorie</th>
+                <th>Unitate</th>
+                <th class="num">Preț (lei)</th>
+                <th>Disponibil</th>
+                <th>Acțiuni</th>
+              </tr>
+            </thead>
+            <tbody id="products-body"></tbody>
+            <datalist id="cat-list"></datalist>
+          </table>
+        </div>
+        <div class="actions">
+          <button class="btn btn-ghost" id="add-product-btn">+ Adaugă produs nou</button>
+          <button class="btn btn-ghost" id="refresh-btn">↻ Reîncarcă datele</button>
+        </div>
+      </section>
+
+      <!-- ===================================================== Facturi === -->
+      <section class="admin-section hidden" id="section-facturi">
+        <h2>🧾 Facturi</h2>
+        <p class="section-hint">Facturile se emit din lista de comenzi (butonul „Emite factura" din detaliile comenzii). Prețurile includ TVA; factura defalcă baza de impozitare și TVA-ul conform cotei setate în Configurare.</p>
+        <div id="invoices"></div>
+      </section>
+
+      <!-- ================================================= Configurare === -->
+      <section class="admin-section hidden" id="section-configurare">
+        <h2>⚙️ Configurare</h2>
+
+        <div class="card settings-card">
+          <h3>🏢 Date firmă și facturare</h3>
+          <p class="settings-desc">Aceste date apar pe facturile emise.</p>
+          <div class="form-grid">
+            <div class="field">
+              <label for="s-companyName">Denumirea firmei <span class="req">*</span></label>
+              <input id="s-companyName" type="text" placeholder="ex: GranaFarm SRL">
+            </div>
+            <div class="field">
+              <label for="s-cui">CUI / CIF</label>
+              <input id="s-cui" type="text" placeholder="ex: RO12345678">
+            </div>
+            <div class="field">
+              <label for="s-regCom">Nr. Registrul Comerțului</label>
+              <input id="s-regCom" type="text" placeholder="ex: J11/569/2023">
+            </div>
+            <div class="field">
+              <label for="s-euid">EUID</label>
+              <input id="s-euid" type="text" placeholder="ex: ROONRC.J11/569/2023">
+            </div>
+            <div class="field">
+              <label for="s-ownerPhone">Telefon proprietar (SMS comenzi noi)</label>
+              <input id="s-ownerPhone" type="tel" placeholder="ex: 0722 123 456">
+            </div>
+            <div class="field">
+              <label for="s-ownerEmail">Email proprietar (notificări comenzi noi)</label>
+              <input id="s-ownerEmail" type="email" placeholder="ex: proprietar@granafarm.ro">
+            </div>
+            <div class="field">
+              <label for="s-address">Adresa sediului</label>
+              <input id="s-address" type="text" placeholder="ex: Str. Serelor nr. 1">
+            </div>
+            <div class="field">
+              <label for="s-city">Localitate</label>
+              <input id="s-city" type="text" placeholder="ex: Cluj-Napoca">
+            </div>
+            <div class="field">
+              <label for="s-phone">Telefon firmă</label>
+              <input id="s-phone" type="tel" placeholder="ex: 0264 123 456">
+            </div>
+            <div class="field">
+              <label for="s-email">Email firmă</label>
+              <input id="s-email" type="email" placeholder="ex: contact@granafarm.ro">
+            </div>
+            <div class="field">
+              <label for="s-iban">IBAN</label>
+              <input id="s-iban" type="text" placeholder="ex: RO49AAAA1B31007593840000">
+            </div>
+            <div class="field">
+              <label for="s-bank">Banca</label>
+              <input id="s-bank" type="text" placeholder="ex: Banca Transilvania">
+            </div>
+            <div class="field">
+              <label for="s-invoiceSeries">Seria facturilor <span class="req">*</span></label>
+              <input id="s-invoiceSeries" type="text" placeholder="ex: GF">
+            </div>
+            <div class="field">
+              <label for="s-vatRate">Cota TVA (%) <span class="req">*</span></label>
+              <input id="s-vatRate" type="number" min="0" max="50" step="1" placeholder="ex: 11">
+            </div>
+          </div>
+          <div id="settings-msg"></div>
+          <div class="actions">
+            <button class="btn btn-primary" id="save-settings-btn">Salvează datele firmei</button>
+          </div>
+        </div>
+
+        <div class="card settings-card">
+          <h3>📧 Email (Postmark) <span class="status-pill off" id="postmark-status">Inactiv</span></h3>
+          <p class="settings-desc">Trimite email de confirmare clienților și notificări de comandă nouă către dvs., prin <a href="https://postmarkapp.com" target="_blank" rel="noopener">Postmark</a>.</p>
+          <div class="switch-row">
+            <div>
+              <div class="switch-label">Activează trimiterea de email-uri</div>
+              <div class="switch-hint">Fără activare, email-urile rămân doar în jurnal (mod simulat).</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="pm-enabled"><span class="slider"></span></label>
+          </div>
+          <div class="form-grid">
+            <div class="field full">
+              <label for="pm-apiToken">Server API Token (Postmark)</label>
+              <input id="pm-apiToken" type="text" placeholder="ex: 11111111-2222-3333-4444-555555555555">
+            </div>
+            <div class="field">
+              <label for="pm-fromEmail">Adresa expeditor</label>
+              <input id="pm-fromEmail" type="email" placeholder="ex: comenzi@granafarm.ro">
+            </div>
+            <div class="field">
+              <label for="pm-fromName">Nume expeditor</label>
+              <input id="pm-fromName" type="text" placeholder="ex: GranaFarm">
+            </div>
+          </div>
+          <div id="postmark-msg"></div>
+          <div class="actions">
+            <button class="btn btn-primary" id="save-postmark-btn">Salvează configurarea email</button>
+          </div>
+
+          <div class="test-send">
+            <label for="test-email-to">✉️ Testează trimiterea către o adresă de email</label>
+            <div class="test-send-row">
+              <input id="test-email-to" type="email" placeholder="ex: proprietar@granafarm.ro">
+              <button class="btn btn-ghost" id="test-email-btn">Trimite email de test</button>
+            </div>
+            <p class="test-send-hint">Se trimite un mesaj de probă la adresa de mai sus. Salvați mai întâi tokenul Postmark și activați trimiterea pentru un test real; altfel mesajul apare doar în jurnal (mod simulat).</p>
+          </div>
+        </div>
+
+        <div class="card settings-card">
+          <h3>🎨 Design și text email</h3>
+          <p class="settings-desc">Personalizați subiectul și textul emailurilor. Textul este redat automat într-un layout HTML cu logo-ul firmei. Aceleași token-uri ca la SMS.</p>
+          <div class="token-legend">
+            <code>{number}</code><code>{name}</code><code>{company}</code><code>{total}</code><code>{city}</code><code>{phone}</code><code>{deliveryDate}</code>
+          </div>
+
+          <div class="switch-row">
+            <div>
+              <div class="switch-label">Trimite facturi pe email</div>
+              <div class="switch-hint">Comutator principal. Când e oprit, facturile NU se trimit pe email — nici automat la confirmare, nici manual din secțiunea Facturi (butonul „Email" dispare).</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="et-invoiceEmailEnabled"><span class="slider"></span></label>
+          </div>
+
+          <div class="switch-row">
+            <div>
+              <div class="switch-label">Atașează automat factura la emailul de confirmare</div>
+              <div class="switch-hint">Când confirmați o comandă care are deja factură emisă, PDF-ul se atașează automat clientului. (Necesită comutatorul de mai sus activ.)</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="et-attachInvoice"><span class="slider"></span></label>
+          </div>
+
+          <h4 class="email-tpl-sub">✅ Email către client — „Comandă confirmată"</h4>
+          <div class="field"><label for="et-clientSubject">Subiect</label><input id="et-clientSubject" type="text"></div>
+          <div class="field" style="margin-top:12px;"><label for="et-clientHeading">Titlu afișat în email</label><input id="et-clientHeading" type="text"></div>
+          <div class="field" style="margin-top:12px;"><label for="et-clientBody">Mesaj (mai multe rânduri devin paragrafe)</label><textarea id="et-clientBody" class="template-input" rows="5"></textarea></div>
+
+          <h4 class="email-tpl-sub">📦 Email către dvs. — „Comandă nouă"</h4>
+          <div class="field"><label for="et-ownerSubject">Subiect</label><input id="et-ownerSubject" type="text"></div>
+          <div class="field" style="margin-top:12px;"><label for="et-ownerHeading">Titlu afișat în email</label><input id="et-ownerHeading" type="text"></div>
+          <div class="field" style="margin-top:12px;"><label for="et-ownerBody">Mesaj</label><textarea id="et-ownerBody" class="template-input" rows="4"></textarea></div>
+
+          <h4 class="email-tpl-sub">Subsol email</h4>
+          <div class="field"><label for="et-footer">Text subsol (footer)</label><input id="et-footer" type="text"></div>
+
+          <div id="email-tpl-msg"></div>
+          <div class="actions">
+            <button class="btn btn-primary" id="save-email-tpl-btn">Salvează textele email</button>
+          </div>
+        </div>
+
+        <h2 style="margin-top:34px;">📨 Jurnal email</h2>
+        <p class="section-hint" id="email-provider-hint"></p>
+        <div id="email-log"></div>
+
+        <div class="card settings-card" style="margin-top:20px;">
+          <h3>📣 Marketing prin email</h3>
+          <p class="settings-desc">Clienții pot bifa pe formularul de comandă „Vreau să primesc oferte prin email". Exportați lista pentru campanii.</p>
+          <div class="switch-row">
+            <div>
+              <div class="switch-label">Colectează opțiuni de marketing</div>
+              <div class="switch-hint">Afișează bifa de abonare pe formularul de comandă al clienților.</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="mk-enabled"><span class="slider"></span></label>
+          </div>
+          <div class="export-row">
+            <button class="btn btn-ghost" id="export-marketing-btn">⬇️ Exportă lista (CSV)</button>
+            <span class="export-count" id="marketing-count"></span>
+          </div>
+          <div id="marketing-msg"></div>
+        </div>
+
+        <div class="card settings-card">
+          <h3>💬 Șabloane SMS</h3>
+          <p class="settings-desc">Textul mesajelor trimise automat. Token-urile de mai jos se înlocuiesc cu datele comenzii.</p>
+          <div class="token-legend">
+            <code>{number}</code><code>{name}</code><code>{company}</code><code>{total}</code><code>{city}</code><code>{phone}</code><code>{deliveryDate}</code>
+          </div>
+          <div class="field">
+            <label for="tpl-ownerNewOrder">SMS „Comandă nouă" (către dvs.)</label>
+            <textarea id="tpl-ownerNewOrder" class="template-input" rows="3"></textarea>
+          </div>
+          <div class="field" style="margin-top:14px;">
+            <label for="tpl-clientConfirmed">SMS „Comandă confirmată" (către client)</label>
+            <textarea id="tpl-clientConfirmed" class="template-input" rows="3"></textarea>
+          </div>
+          <div id="templates-msg"></div>
+          <div class="actions">
+            <button class="btn btn-primary" id="save-templates-btn">Salvează șabloanele</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================== Integrări === -->
+      <section class="admin-section hidden" id="section-integrari">
+        <h2>🔌 Integrări</h2>
+
+        <div class="card settings-card">
+          <h3>📱 Twilio (SMS) <span class="status-pill off" id="twilio-status">Inactiv</span></h3>
+          <p class="settings-desc" id="twilio-source-hint"></p>
+          <div class="form-grid">
+            <div class="field">
+              <label for="tw-accountSid">Account SID</label>
+              <input id="tw-accountSid" type="text" placeholder="ex: ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+            </div>
+            <div class="field">
+              <label for="tw-authToken">Auth Token</label>
+              <input id="tw-authToken" type="text" placeholder="ex: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+            </div>
+            <div class="field">
+              <label for="tw-fromNumber">Număr expeditor</label>
+              <input id="tw-fromNumber" type="text" placeholder="ex: +40712345678">
+            </div>
+          </div>
+          <p class="settings-desc">Lăsați toate cele 3 câmpuri goale pentru a folosi variabilele de mediu <code>TWILIO_ACCOUNT_SID</code> / <code>TWILIO_AUTH_TOKEN</code> / <code>TWILIO_FROM</code> setate pe host (dacă există).</p>
+          <div id="twilio-msg"></div>
+          <div class="actions">
+            <button class="btn btn-primary" id="save-twilio-btn">Salvează configurarea Twilio</button>
+          </div>
+
+          <div class="test-send">
+            <label for="test-sms-to">📤 Testează trimiterea către un număr de telefon</label>
+            <div class="test-send-row">
+              <input id="test-sms-to" type="tel" placeholder="ex: 0722 123 456">
+              <button class="btn btn-ghost" id="test-sms-btn">Trimite SMS de test</button>
+            </div>
+            <p class="test-send-hint">Se trimite un SMS de probă la numărul de mai sus. Salvați mai întâi datele Twilio pentru un test real; altfel mesajul apare doar în jurnal (mod simulat).</p>
+          </div>
+        </div>
+
+        <h2>📨 Jurnal SMS</h2>
+        <p class="section-hint" id="sms-provider-hint"></p>
+        <div id="sms-log"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site">GranaFarm — panou de administrare</footer>
+
+  <script src="demo-api.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>
