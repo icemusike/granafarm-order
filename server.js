@@ -19,6 +19,7 @@
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
+const QRCode = require('qrcode');
 const { createStorage } = require('./lib/storage');
 const {
   DEFAULT_SETTINGS,
@@ -754,6 +755,39 @@ app.get('/track/:token', (req, res) => {
   return res.sendFile(path.join(__dirname, 'public', 'track.html'));
 });
 
+// --- eticheta de livrare + pagina șoferului -----------------------------------
+
+// Informațiile pentru șofer, accesibile prin token-ul din codul QR de pe
+// etichetă (fără autentificare — token aleator de 43 de caractere).
+app.get('/api/orders/delivery/:token', asyncRoute(async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+  const token = String(req.params.token || '');
+  if (!TRACKING_TOKEN_RE.test(token)) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
+  const order = await storage.getOrderByDeliveryToken(token);
+  if (!order) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
+  res.json({
+    number: order.number,
+    status: order.status,
+    name: order.customer.name,
+    company: order.customer.company || '',
+    phone: order.customer.phone,
+    address: order.customer.address,
+    city: order.customer.city,
+    notes: order.customer.notes || '',
+    deliveryDate: order.delivery.date || order.customer.deliveryDate || '',
+    deliveryWindow: order.delivery.windowLabel || '',
+    location: order.delivery.location || null,
+    items: order.items.map((item) => ({ name: item.name, unit: item.unit, qty: Number(item.qty) })),
+    total: Number(order.total),
+  });
+}));
+
+app.get('/delivery/:token', (req, res) => {
+  if (!TRACKING_TOKEN_RE.test(String(req.params.token || ''))) return res.status(404).send('Comanda nu a fost găsită.');
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+  return res.sendFile(path.join(__dirname, 'public', 'delivery.html'));
+});
+
 // --- API administrare --------------------------------------------------------
 
 function requireAdmin(req, res, next) {
@@ -906,6 +940,21 @@ app.delete('/api/admin/orders/:id', requireAdmin, asyncRoute(async (req, res) =>
   const ok = await storage.deleteOrder(req.params.id);
   if (!ok) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
   res.json({ ok: true });
+}));
+
+// Datele pentru eticheta de livrare: URL-ul șoferului + codul QR (data URL).
+// Token-ul se generează o singură dată per comandă, apoi se refolosește, ca
+// etichetele deja printate să rămână valabile la reprintare.
+app.post('/api/admin/orders/:id/delivery-label', requireAdmin, asyncRoute(async (req, res) => {
+  let order = await storage.getOrder(req.params.id);
+  if (!order) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
+  if (!order.deliveryToken) {
+    const token = crypto.randomBytes(32).toString('base64url');
+    order = await storage.updateOrder(order.id, { deliveryToken: token });
+  }
+  const url = buildNotificationTrackingUrl(req, `/delivery/${order.deliveryToken}`);
+  const qr = await QRCode.toDataURL(url, { width: 260, margin: 1, errorCorrectionLevel: 'M' });
+  res.json({ url, qr });
 }));
 
 app.get('/api/admin/products', requireAdmin, asyncRoute(async (req, res) => {
