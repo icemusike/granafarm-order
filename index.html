@@ -2,134 +2,177 @@
 <html lang="ro">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>GranaFarm — Comandă legume proaspete</title>
   <link rel="icon" type="image/png" href="favicon.png">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="order.css">
 </head>
 <body>
-  <header class="site">
-    <div class="wrap">
-      <div class="brand">
-        <img class="brand-logo" src="logo.png" alt="GranaFarm — legume proaspete din seră">
-        <p class="brand-tag">Legume proaspete direct din seră — pentru restaurante, magazine și angro</p>
-      </div>
-      <a class="header-link" href="admin.html">Administrare</a>
-    </div>
-    <div class="hero-points">
-      <span>🌱 Recoltate în ziua livrării</span>
-      <span>🚚 Livrare la adresa dumneavoastră</span>
-      <span>📦 Cantități pentru restaurante și angro</span>
-      <span>📞 Confirmare telefonică</span>
-    </div>
-  </header>
-
-  <main>
-    <div id="order-form-section">
-      <h2><span class="step">1</span> Alegeți produsele</h2>
-      <p class="section-hint">Introduceți cantitatea dorită pentru fiecare produs. Prețurile sunt afișate per unitate de măsură.</p>
-      <div class="products" id="products"></div>
-
-      <h2><span class="step">2</span> Sumarul comenzii</h2>
-      <div class="card summary" id="summary"></div>
-
-      <h2 id="delivery-heading"><span class="step">3</span> Date de livrare</h2>
-
-      <div class="welcome-back hidden" id="welcome-back">
-        <span>👋 Bun venit înapoi<span id="welcome-name"></span>! Am completat datele dvs. din comanda anterioară.</span>
-        <button type="button" id="clear-profile-btn">Nu sunt eu / Șterge datele</button>
-      </div>
-
-      <div class="card">
-        <div class="form-grid">
-          <div class="field">
-            <label for="c-name">Nume și prenume / persoană de contact <span class="req">*</span></label>
-            <input id="c-name" type="text" placeholder="ex: Ion Popescu">
-          </div>
-          <div class="field">
-            <label for="c-company">Denumirea firmei (opțional)</label>
-            <input id="c-company" type="text" placeholder="ex: Restaurant La Bunica SRL">
-          </div>
-          <div class="field">
-            <label for="c-cui">CUI / CIF — pentru factură (opțional)</label>
-            <input id="c-cui" type="text" placeholder="ex: RO12345678">
-          </div>
-          <div class="field">
-            <label for="c-type">Tip client</label>
-            <select id="c-type">
-              <option value="restaurant">Restaurant</option>
-              <option value="magazin">Magazin alimentar</option>
-              <option value="angro">Angro / distribuitor</option>
-              <option value="persoana_fizica">Persoană fizică</option>
-              <option value="altul">Altul</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="c-phone">Telefon <span class="req">*</span></label>
-            <input id="c-phone" type="tel" placeholder="ex: 0722 123 456">
-          </div>
-          <div class="field">
-            <label for="c-email">Email (opțional)</label>
-            <input id="c-email" type="email" placeholder="ex: comenzi@restaurant.ro">
-          </div>
-          <div class="field">
-            <label for="c-delivery-date">Data dorită pentru livrare</label>
-            <input id="c-delivery-date" type="date">
-          </div>
-          <div class="field">
-            <label for="c-city">Localitate <span class="req">*</span></label>
-            <input id="c-city" type="text" placeholder="ex: Cluj-Napoca">
-          </div>
-          <div class="field">
-            <label for="c-address">Adresa de livrare <span class="req">*</span></label>
-            <input id="c-address" type="text" placeholder="ex: Str. Florilor nr. 10">
-          </div>
-          <div class="field full">
-            <label for="c-notes">Observații (opțional)</label>
-            <textarea id="c-notes" rows="3" placeholder="ex: Livrare înainte de ora 9:00, sunați la sosire"></textarea>
-          </div>
+  <!-- ============================================================ app ==== -->
+  <div id="app">
+    <!-- header -->
+    <header class="app-header">
+      <div class="app-header-top">
+        <div class="brand-mini">
+          <img src="logo.png" alt="GranaFarm">
+          <span class="tag">Din seră · Livrare lun–sâm</span>
         </div>
-
-        <label class="check-row">
-          <input type="checkbox" id="c-remember" checked>
-          <span>Ține minte datele mele pentru comenzi viitoare (pe acest telefon/computer)</span>
-        </label>
-        <label class="check-row">
-          <input type="checkbox" id="c-marketing">
-          <span>Vreau să primesc oferte și noutăți prin email (opțional)</span>
-        </label>
-
-        <div id="form-msg"></div>
-
-        <div class="actions">
-          <button class="btn btn-primary" id="submit-btn">Trimite comanda</button>
-          <span style="color: var(--muted); font-size: 0.87rem;">Vă vom contacta telefonic pentru confirmare.</span>
-        </div>
+        <button type="button" class="cart-btn" id="cart-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/><path d="M2 3h2.2l2 12.4a1.6 1.6 0 0 0 1.6 1.3h8.7a1.6 1.6 0 0 0 1.6-1.2L21 7H5.2"/></svg>
+          <span>Coș</span>
+          <span class="cart-badge hidden" id="cart-badge">0</span>
+        </button>
       </div>
-    </div>
+      <nav class="cat-nav" id="cat-nav"></nav>
+    </header>
 
-    <div id="confirmation-section" class="card confirmation hidden">
-      <div class="icon">✅</div>
-      <h2>Comanda a fost trimisă!</h2>
-      <p>Numărul comenzii dumneavoastră este:</p>
-      <p class="order-no" id="conf-number"></p>
-      <p id="conf-total"></p>
-      <p style="color: var(--muted);">Vă vom contacta în cel mai scurt timp pentru confirmare și detalii de livrare.</p>
-      <button class="btn btn-primary" onclick="location.reload()">Plasează o comandă nouă</button>
-    </div>
-  </main>
+    <!-- catalog -->
+    <main class="catalog">
+      <div class="reorder hidden" id="reorder">
+        <div class="reorder-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v5h-5"/></svg>
+        </div>
+        <div class="reorder-info">
+          <div class="title">Repetă ultima comandă</div>
+          <div class="sub" id="reorder-sub"></div>
+        </div>
+        <button type="button" class="btn btn-accent btn-sm btn-pill" id="reorder-btn">Adaugă</button>
+      </div>
 
-  <div class="cart-bar hidden" id="cart-bar">
-    <div class="info">
-      <span class="count" id="cart-bar-count"></span>
-      <span class="total" id="cart-bar-total"></span>
+      <div id="catalog-list"></div>
+
+      <p class="catalog-footer">
+        GranaFarm — seră de legume proaspete · <a href="admin.html" style="color:inherit;">Administrare</a>
+      </p>
+    </main>
+
+    <!-- cart bar -->
+    <div class="cart-bar hidden" id="cart-bar">
+      <div class="info">
+        <span class="count" id="cart-bar-count"></span>
+        <span class="total" id="cart-bar-total"></span>
+      </div>
+      <button type="button" class="btn btn-accent btn-md btn-pill" id="cart-bar-btn">Finalizează comanda</button>
     </div>
-    <button type="button" id="cart-bar-btn">Finalizează comanda ↓</button>
   </div>
 
-  <footer class="site">
-    GranaFarm — seră de legume proaspete · Comenzi: luni–sâmbătă
-  </footer>
+  <!-- ========================================================= drawer ==== -->
+  <div class="drawer hidden" id="drawer">
+    <div class="drawer-scrim" id="drawer-scrim"></div>
+    <div class="drawer-sheet">
+      <div class="drawer-head">
+        <h2>Finalizează comanda</h2>
+        <button type="button" class="drawer-close" id="drawer-close" aria-label="Închide">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="drawer-body">
+        <div class="drawer-empty hidden" id="drawer-empty">Coșul este gol. Alege produse din catalog.</div>
+
+        <div id="drawer-content">
+          <!-- sumar -->
+          <div>
+            <div class="cat-head"><h3>Sumar comandă</h3><span class="rule"></span></div>
+            <div class="summary" id="summary"></div>
+          </div>
+
+          <!-- livrare -->
+          <div style="margin-top:22px;">
+            <div class="cat-head"><h3>Zi de livrare</h3><span class="rule"></span></div>
+            <div class="delivery-chips" id="delivery-chips"></div>
+          </div>
+
+          <!-- date de contact -->
+          <div class="form-section" style="margin-top:22px;">
+            <div class="cat-head"><h3>Datele tale</h3><span class="rule"></span></div>
+
+            <div class="welcome hidden" id="welcome">
+              <span id="welcome-text">Bun venit înapoi! Am completat datele tale.</span>
+              <button type="button" id="clear-profile-btn">Nu sunt eu</button>
+            </div>
+
+            <label class="field">
+              <span>Nume / persoană de contact <span class="req">*</span></span>
+              <input id="c-name" type="text" placeholder="ex: Ion Popescu" autocomplete="name">
+            </label>
+            <div class="field-2col">
+              <label class="field">
+                <span>Firmă</span>
+                <input id="c-company" type="text" placeholder="opțional" autocomplete="organization">
+              </label>
+              <label class="field">
+                <span>CUI / CIF</span>
+                <input id="c-cui" type="text" placeholder="pt. factură">
+              </label>
+            </div>
+            <div class="field-2col">
+              <label class="field">
+                <span>Tip client</span>
+                <select id="c-type">
+                  <option value="restaurant">Restaurant</option>
+                  <option value="magazin">Magazin alimentar</option>
+                  <option value="angro">Angro / distribuitor</option>
+                  <option value="persoana_fizica">Persoană fizică</option>
+                  <option value="altul">Altul</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Telefon <span class="req">*</span></span>
+                <input id="c-phone" type="tel" placeholder="07xx xxx xxx" autocomplete="tel">
+              </label>
+            </div>
+            <label class="field">
+              <span>Email</span>
+              <input id="c-email" type="email" placeholder="opțional — pentru confirmare și factură" autocomplete="email">
+            </label>
+            <div class="field-2col">
+              <label class="field">
+                <span>Localitate <span class="req">*</span></span>
+                <input id="c-city" type="text" placeholder="ex: Cluj-Napoca" autocomplete="address-level2">
+              </label>
+              <label class="field">
+                <span>Adresa de livrare <span class="req">*</span></span>
+                <input id="c-address" type="text" placeholder="Str. Florilor nr. 10" autocomplete="street-address">
+              </label>
+            </div>
+            <label class="field">
+              <span>Observații</span>
+              <textarea id="c-notes" placeholder="ex: livrare înainte de ora 9:00, sunați la sosire"></textarea>
+            </label>
+
+            <label class="checkrow">
+              <input type="checkbox" id="c-remember" checked>
+              <span>Ține minte datele mele pentru comenzi viitoare (pe acest dispozitiv).</span>
+            </label>
+            <label class="checkrow">
+              <input type="checkbox" id="c-marketing">
+              <span>Vreau să primesc oferte și noutăți prin email.</span>
+            </label>
+
+            <div class="form-error hidden" id="form-error"></div>
+
+            <button type="button" class="btn btn-primary btn-lg btn-full" id="submit-btn">Trimite comanda</button>
+            <p class="form-note">Te vom contacta telefonic pentru confirmare.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================== confirmare ==== -->
+  <div class="confirm-wrap hidden" id="confirm">
+    <div class="confirm-card">
+      <div class="confirm-check">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#2C541D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+      </div>
+      <h2>Comanda a fost trimisă!</h2>
+      <p>Numărul comenzii tale:</p>
+      <div class="confirm-num" id="confirm-num"></div>
+      <p class="confirm-total" id="confirm-total"></p>
+      <p>Te vom contacta în cel mai scurt timp pentru confirmare și detalii de livrare.</p>
+      <button type="button" class="btn btn-secondary btn-md btn-full btn-pill" onclick="location.reload()">Plasează o comandă nouă</button>
+    </div>
+  </div>
 
   <script src="demo-api.js"></script>
   <script src="app.js"></script>
