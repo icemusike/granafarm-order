@@ -478,10 +478,11 @@ function populateDeliveryControls() {
 
 function normalizedBusinessDays() {
   const dayNames = { duminica: 0, luni: 1, marti: 2, miercuri: 3, joi: 4, vineri: 5, sambata: 6 };
-  const days = (Array.isArray(state.config.businessDays) ? state.config.businessDays : [1, 2, 3, 4, 5, 6])
+  // Implicit livrăm 7 zile din 7 (inclusiv weekendul).
+  const days = (Array.isArray(state.config.businessDays) ? state.config.businessDays : [0, 1, 2, 3, 4, 5, 6])
     .map((day) => typeof day === 'number' ? day : dayNames[normalizeText(day)])
     .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
-  return days.length ? new Set(days) : new Set([1, 2, 3, 4, 5, 6]);
+  return days.length ? new Set(days) : new Set([0, 1, 2, 3, 4, 5, 6]);
 }
 
 function addBusinessDays(date, count) {
@@ -543,7 +544,9 @@ function businessFieldsRequired() {
 function updateBusinessFields() {
   const visible = businessFieldsRequired();
   $('business-fields').classList.toggle('hidden', !visible);
-  $('c-company').required = visible;
+  // Denumirea firmei este întotdeauna opțională — factura se poate emite și
+  // pe numele persoanei de contact.
+  $('c-company').required = false;
   $('cui-optional').textContent = $('c-invoice').checked ? '*' : 'opțional';
   $('c-cui').required = $('c-invoice').checked;
   if (!visible) {
@@ -560,7 +563,10 @@ const validators = {
     return digits.length >= 9 && digits.length <= 15 ? '' : 'Introdu un număr de telefon valid.';
   },
   'c-email': () => !$('c-email').value || $('c-email').validity.valid ? '' : 'Introdu o adresă de email validă.',
-  'c-company': () => !businessFieldsRequired() || $('c-company').value.trim().length >= 2 ? '' : 'Introdu denumirea firmei.',
+  'c-company': () => {
+    const value = $('c-company').value.trim();
+    return !value || value.length >= 2 ? '' : 'Denumirea firmei este prea scurtă.';
+  },
   'c-cui': () => {
     const value = $('c-cui').value.trim().replace(/\s/g, '');
     if (!$('c-invoice').checked && !value) return '';
