@@ -80,6 +80,12 @@ async function login() {
 async function showDashboard() {
   document.getElementById('login-section').classList.add('hidden');
   document.getElementById('dashboard-section').classList.remove('hidden');
+  // fișa de cules pornește implicit pe ziua de azi
+  const harvestDate = document.getElementById('harvest-date');
+  if (!harvestDate.value) {
+    const now = new Date();
+    harvestDate.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
   await loadAll();
   renderRangeBar();
   showSection(location.hash.slice(1) || 'comenzi');
@@ -268,36 +274,11 @@ function renderFilter() {
   });
 }
 
-function renderOrders() {
-  const el = document.getElementById('orders');
-  const list = activeFilter === 'toate' ? orders : orders.filter((o) => o.status === activeFilter);
+let editingOrderId = null;
 
-  if (list.length === 0) {
-    el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Nu există comenzi în această categorie.</div>';
-    return;
-  }
-
-  el.innerHTML = '';
-  for (const o of list) {
-    const card = document.createElement('div');
-    card.className = 'order-card' + (expanded.has(o.id) ? ' open' : '');
-
-    const date = new Date(o.createdAt).toLocaleString('ro-RO', { dateStyle: 'medium', timeStyle: 'short' });
-    const company = o.customer.company ? ` · ${esc(o.customer.company)}` : '';
-
-    card.innerHTML = `
-      <div class="order-head">
-        <div class="who">
-          <span class="name">${esc(o.number)} — ${esc(o.customer.name)}${company}</span>
-          <span class="meta">${TYPE_LABELS[o.customer.type] || 'Altul'} · ${date} · ${esc(o.customer.city)}</span>
-        </div>
-        <div class="right">
-          <span class="total">${lei(o.total)}</span>
-          <span class="badge badge-${o.status}">${STATUS_LABELS[o.status]}</span>
-          <span class="chev">▼</span>
-        </div>
-      </div>
-      <div class="order-body ${expanded.has(o.id) ? '' : 'hidden'}">
+// Conținutul normal (doar citire) al detaliilor unei comenzi.
+function orderBodyHtml(o) {
+  return `
         <div>
           <h4>Produse comandate</h4>
           <table>
@@ -327,21 +308,101 @@ function renderOrders() {
             ${Object.entries(STATUS_LABELS).map(([v, l]) => `<option value="${v}" ${o.status === v ? 'selected' : ''}>${l}</option>`).join('')}
           </select>
           <span style="flex:1"></span>
+          <button class="btn-small" data-edit-order>✏️ Editează</button>
+          <button class="btn-small danger" data-delete-order>🗑️ Șterge</button>
           ${o.invoiceNumber
             ? `<button class="btn-small save" data-view-invoice>🧾 Vezi factura ${esc(o.invoiceNumber)}</button>`
             : `<button class="btn-small save" data-make-invoice ${o.status === 'anulata' ? 'disabled' : ''}>🧾 Emite factura</button>`}
+        </div>`;
+}
+
+// Formularul de editare a comenzii (date client, dată livrare, cantități).
+function orderEditHtml(o) {
+  const field = (label, key, value, type = 'text', placeholder = '') => `
+    <div class="field">
+      <label>${label}</label>
+      <input type="${type}" data-e="${key}" value="${esc(value || '')}" placeholder="${esc(placeholder)}">
+    </div>`;
+  return `
+        <div class="order-edit" style="grid-column: 1 / -1;">
+          <h4>✏️ Editare comandă ${esc(o.number)}</h4>
+          <div class="form-grid">
+            ${field('Persoană de contact *', 'name', o.customer.name)}
+            ${field('Firmă', 'company', o.customer.company)}
+            ${field('CUI / CIF', 'cui', o.customer.cui)}
+            ${field('Telefon *', 'phone', o.customer.phone, 'tel')}
+            ${field('Email', 'email', o.customer.email, 'email')}
+            ${field('Localitate *', 'city', o.customer.city)}
+            ${field('Adresă *', 'address', o.customer.address)}
+            ${field('Data livrării', 'deliveryDate', o.customer.deliveryDate || o.delivery?.date || '', 'date')}
+            <div class="field full">
+              <label>Observații</label>
+              <textarea data-e="notes" rows="2">${esc(o.customer.notes || '')}</textarea>
+            </div>
+          </div>
+          <h4 style="margin-top:16px;">Cantități <span style="font-weight:400; color:var(--muted); font-size:0.85em;">(0 elimină produsul din comandă)</span></h4>
+          <table class="edit-items">
+            ${o.items.map((i, idx) => `<tr>
+              <td>${esc(i.name)}</td>
+              <td class="num" style="width:130px;"><input type="number" min="0" step="0.5" data-e-qty="${idx}" value="${i.qty}" style="width:90px; text-align:right;"> ${esc(i.unit)}</td>
+              <td class="num">${lei(i.price)} / ${esc(i.unit)}</td>
+              <td class="num" data-e-sub="${idx}">${lei(i.price * i.qty)}</td>
+            </tr>`).join('')}
+            <tr><td colspan="3" style="font-weight:700;">Total nou</td><td class="num" style="font-weight:700;" data-e-total>${lei(o.total)}</td></tr>
+          </table>
+          <div data-edit-msg></div>
+          <div class="actions" style="margin-top:12px;">
+            <button class="btn-small save" data-save-edit>💾 Salvează modificările</button>
+            <button class="btn-small" data-cancel-edit>Renunță</button>
+          </div>
+        </div>`;
+}
+
+function renderOrders() {
+  const el = document.getElementById('orders');
+  const list = activeFilter === 'toate' ? orders : orders.filter((o) => o.status === activeFilter);
+
+  if (list.length === 0) {
+    el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Nu există comenzi în această categorie.</div>';
+    return;
+  }
+
+  el.innerHTML = '';
+  for (const o of list) {
+    const card = document.createElement('div');
+    card.className = 'order-card' + (expanded.has(o.id) ? ' open' : '');
+
+    const date = new Date(o.createdAt).toLocaleString('ro-RO', { dateStyle: 'medium', timeStyle: 'short' });
+    const company = o.customer.company ? ` · ${esc(o.customer.company)}` : '';
+    const editing = editingOrderId === o.id;
+
+    card.innerHTML = `
+      <div class="order-head">
+        <div class="who">
+          <span class="name">${esc(o.number)} — ${esc(o.customer.name)}${company}</span>
+          <span class="meta">${TYPE_LABELS[o.customer.type] || 'Altul'} · ${date} · ${esc(o.customer.city)}</span>
         </div>
+        <div class="right">
+          <span class="total">${lei(o.total)}</span>
+          <span class="badge badge-${o.status}">${STATUS_LABELS[o.status]}</span>
+          <span class="chev">▼</span>
+        </div>
+      </div>
+      <div class="order-body ${expanded.has(o.id) ? '' : 'hidden'}">
+        ${editing ? orderEditHtml(o) : orderBodyHtml(o)}
       </div>`;
 
     card.querySelector('.order-head').onclick = () => {
-      if (expanded.has(o.id)) expanded.delete(o.id); else expanded.add(o.id);
+      if (expanded.has(o.id)) { expanded.delete(o.id); if (editingOrderId === o.id) editingOrderId = null; }
+      else expanded.add(o.id);
       renderOrders();
     };
 
     const mapElement = card.querySelector('[data-order-map]');
     if (mapElement) void renderAdminMap(mapElement, o.delivery?.location);
 
-    card.querySelector('[data-status]').onchange = async (e) => {
+    const statusSelect = card.querySelector('[data-status]');
+    if (statusSelect) statusSelect.onchange = async (e) => {
       const res = await api(`/api/admin/orders/${o.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status: e.target.value }),
@@ -357,6 +418,87 @@ function renderOrders() {
         api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
       }
     };
+
+    const editBtn = card.querySelector('[data-edit-order]');
+    if (editBtn) editBtn.onclick = (e) => {
+      e.stopPropagation();
+      editingOrderId = o.id;
+      renderOrders();
+    };
+
+    const deleteBtn = card.querySelector('[data-delete-order]');
+    if (deleteBtn) deleteBtn.onclick = async (e) => {
+      e.stopPropagation();
+      const warning = o.invoiceNumber
+        ? `Sigur ștergeți comanda ${o.number}?\n\nATENȚIE: factura ${o.invoiceNumber} emisă pentru această comandă va fi ștearsă și ea.`
+        : `Sigur ștergeți comanda ${o.number}? Acțiunea nu poate fi anulată.`;
+      if (!confirm(warning)) return;
+      const res = await api(`/api/admin/orders/${o.id}`, { method: 'DELETE' });
+      if (!res.ok) { alert((await res.json()).error || 'Ștergerea a eșuat.'); return; }
+      orders = orders.filter((x) => x.id !== o.id);
+      invoices = invoices.filter((inv) => inv.orderId !== o.id);
+      expanded.delete(o.id);
+      renderNavBadge();
+      renderFilter();
+      renderOrders();
+      renderInvoices();
+      if (statsLoadedOnce) loadStats();
+    };
+
+    // --- mod editare ---
+    if (editing) {
+      // subtotalurile se actualizează live la modificarea cantităților
+      card.querySelectorAll('[data-e-qty]').forEach((input) => {
+        input.oninput = () => {
+          let total = 0;
+          o.items.forEach((item, idx) => {
+            const qtyInput = card.querySelector(`[data-e-qty="${idx}"]`);
+            const qty = Math.max(0, Number(qtyInput.value) || 0);
+            const sub = item.price * qty;
+            total += sub;
+            card.querySelector(`[data-e-sub="${idx}"]`).textContent = lei(sub);
+          });
+          card.querySelector('[data-e-total]').textContent = lei(total + (o.deliveryFee || 0));
+        };
+      });
+
+      card.querySelector('[data-cancel-edit]').onclick = (e) => {
+        e.stopPropagation();
+        editingOrderId = null;
+        renderOrders();
+      };
+
+      card.querySelector('[data-save-edit]').onclick = async (e) => {
+        e.stopPropagation();
+        const val = (key) => card.querySelector(`[data-e="${key}"]`).value.trim();
+        const payload = {
+          customer: {
+            name: val('name'), company: val('company'), cui: val('cui'),
+            phone: val('phone'), email: val('email'),
+            city: val('city'), address: val('address'), notes: val('notes'),
+          },
+          deliveryDate: val('deliveryDate'),
+          items: o.items.map((_, idx) => ({ qty: Number(card.querySelector(`[data-e-qty="${idx}"]`).value) || 0 })),
+        };
+        const btn = card.querySelector('[data-save-edit]');
+        btn.disabled = true;
+        try {
+          const res = await api(`/api/admin/orders/${o.id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+          const data = await res.json();
+          if (!res.ok) {
+            card.querySelector('[data-edit-msg]').innerHTML = `<div class="msg msg-error">${esc(data.error || 'Salvarea a eșuat.')}</div>`;
+            return;
+          }
+          Object.assign(o, data);
+          editingOrderId = null;
+          renderFilter();
+          renderOrders();
+          if (statsLoadedOnce) loadStats();
+        } finally {
+          btn.disabled = false;
+        }
+      };
+    }
 
     const makeBtn = card.querySelector('[data-make-invoice]');
     if (makeBtn) {
@@ -385,6 +527,91 @@ function renderOrders() {
 
     el.appendChild(card);
   }
+}
+
+// --- fișa de cules (agregare cantități pe ziua de livrare) ----------------
+
+function orderDeliveryDate(o) {
+  return o.customer.deliveryDate || o.delivery?.date || '';
+}
+
+function buildHarvestSheet() {
+  const date = document.getElementById('harvest-date').value;
+  if (!date) { alert('Alegeți ziua de livrare pentru fișa de cules.'); return; }
+  const includeNew = document.getElementById('harvest-include-new').checked;
+  const statuses = includeNew ? ['noua', 'confirmata', 'in_livrare'] : ['confirmata', 'in_livrare'];
+  const dayOrders = orders.filter((o) => statuses.includes(o.status) && orderDeliveryDate(o) === date);
+
+  if (dayOrders.length === 0) {
+    alert('Nu există comenzi de livrat în ziua selectată' + (includeNew ? '.' : ' (încercați să includeți și comenzile noi).'));
+    return;
+  }
+
+  // agregare: produs + unitate -> cantitate totală
+  const totals = new Map();
+  for (const o of dayOrders) {
+    for (const item of o.items) {
+      const key = `${item.name}|${item.unit}`;
+      totals.set(key, (totals.get(key) || 0) + item.qty);
+    }
+  }
+  const rows = [...totals.entries()]
+    .map(([key, qty]) => {
+      const [name, unit] = key.split('|');
+      return { name, unit, qty };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'ro'));
+
+  const dateLabel = new Date(date + 'T00:00:00').toLocaleDateString('ro-RO', { dateStyle: 'full' });
+  const fmtQty = (q) => (q % 1 === 0 ? String(q) : String(q).replace('.', ','));
+
+  const aggregateTable = `
+    <table><thead><tr><th style="width:40px;">✔</th><th>Produs</th><th class="num">Cantitate de pregătit</th></tr></thead>
+    <tbody>${rows.map((r) => `<tr><td class="checkbox-cell">☐</td><td>${esc(r.name)}</td><td class="num"><b>${fmtQty(r.qty)} ${esc(r.unit)}</b></td></tr>`).join('')}</tbody></table>`;
+
+  const perOrder = dayOrders.map((o) => `
+    <div class="order-block">
+      <div class="order-title">${esc(o.number)} — ${esc(o.customer.name)}${o.customer.company ? ' · ' + esc(o.customer.company) : ''}
+        <span class="order-meta">${esc(o.customer.city)}${o.delivery?.windowLabel ? ' · ' + esc(o.delivery.windowLabel) : ''} · ${STATUS_LABELS[o.status]}</span></div>
+      <table><tbody>${o.items.map((i) => `<tr><td>${esc(i.name)}</td><td class="num">${fmtQty(i.qty)} ${esc(i.unit)}</td></tr>`).join('')}</tbody></table>
+    </div>`).join('');
+
+  printWindow(`Fișă de cules — ${dateLabel}`, `
+    <h1>🌱 Fișă de cules</h1>
+    <p class="sub">Livrare: <b>${esc(dateLabel)}</b> · ${dayOrders.length} ${dayOrders.length === 1 ? 'comandă' : 'comenzi'} · generată ${new Date().toLocaleString('ro-RO', { dateStyle: 'short', timeStyle: 'short' })}</p>
+    <h2>Total de cules (toate comenzile)</h2>
+    ${aggregateTable}
+    <h2 style="margin-top:26px;">Detaliu pe comandă (pentru împachetare)</h2>
+    ${perOrder}`);
+}
+
+// Fereastră de printare simplă, cu stil curat pentru hârtie.
+function printWindow(title, bodyHtml) {
+  const win = window.open('', '_blank');
+  if (!win) { alert('Permiteți ferestrele pop-up pentru a genera fișa.'); return; }
+  win.document.write(`<!DOCTYPE html><html lang="ro"><head><meta charset="UTF-8"><title>${esc(title)}</title>
+    <style>
+      body { font-family: 'Segoe UI', Arial, system-ui, sans-serif; color: #22302A; margin: 32px auto; max-width: 680px; padding: 0 20px; }
+      h1 { font-size: 1.5rem; margin: 0 0 4px; }
+      h2 { font-size: 1.05rem; margin: 20px 0 10px; border-bottom: 2px solid #FFA726; padding-bottom: 5px; }
+      .sub { color: #6b7d74; font-size: 0.92rem; margin: 0 0 18px; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.98rem; margin-bottom: 12px; }
+      th, td { padding: 8px 6px; border-bottom: 1px solid #e4eae7; text-align: left; }
+      th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7d74; }
+      .num { text-align: right; white-space: nowrap; }
+      .checkbox-cell { font-size: 1.1rem; }
+      .order-block { margin-bottom: 14px; }
+      .order-block table { font-size: 0.9rem; margin-bottom: 4px; }
+      .order-block td { padding: 4px 6px; }
+      .order-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 4px; }
+      .order-meta { font-weight: 400; color: #6b7d74; font-size: 0.85rem; }
+      .print-btn { position: fixed; top: 14px; right: 14px; background: #388E3C; color: #fff; border: none; border-radius: 10px; padding: 12px 22px; font-size: 0.92rem; font-weight: 700; cursor: pointer; }
+      @media print { .print-btn { display: none; } body { margin: 0 auto; } }
+    </style></head><body>
+    <button class="print-btn" onclick="window.print()">🖨️ Printează</button>
+    ${bodyHtml}
+    </body></html>`);
+  win.document.close();
 }
 
 function mapSearchUrl(order) {
@@ -874,6 +1101,7 @@ document.getElementById('password').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') login();
 });
 document.getElementById('refresh-btn').onclick = loadAll;
+document.getElementById('harvest-btn').onclick = buildHarvestSheet;
 document.getElementById('save-settings-btn').onclick = saveCompanySettings;
 document.getElementById('save-postmark-btn').onclick = savePostmark;
 document.getElementById('test-email-btn').onclick = sendTestEmail;
