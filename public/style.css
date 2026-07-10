@@ -1181,6 +1181,17 @@ footer.site {
   font-size: 0.78rem;
 }
 .customer-header .header-link:hover { color: var(--green-dark); background: transparent; transform: none; }
+.header-actions { display: flex; align-items: center; gap: 14px; }
+.customer-header .header-link-catalog {
+  border: 2px solid var(--gold);
+  background: #FFF6E6;
+  color: var(--green-dark);
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.customer-header .header-link-catalog:hover { background: var(--gold); color: #fff; }
 .customer-header .hero-points span {
   border-left: 0;
   background: #f6faf7;

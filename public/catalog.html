@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Catalogul GranaFarm — nouă soiuri de roșii cultivate în serele de sticlă, direct din fermă.">
+  <title>Catalog roșii — GranaFarm</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap");
+
+    :root {
+      --green-900:#14290F; --green-800:#1E3A16; --green-700:#2C541D; --green-600:#3E7524;
+      --green-500:#4F9C2E; --green-300:#96CC7A; --green-200:#C6E3B3; --green-100:#E4F1D9; --green-050:#F2F8EC;
+      --amber-600:#C77E00; --amber-500:#F0A400; --amber-400:#FDB913;
+      --cream-000:#FFFFFF; --cream-050:#FBF9F3; --cream-100:#F5F1E6;
+      --stone-500:#8A8672; --stone-600:#6B6853;
+      --text-heading:var(--green-900); --text-body:#33402C; --text-muted:var(--stone-600);
+      --surface-dark:var(--green-900); --border-subtle:#E7E1D0;
+      --font-display:"Bricolage Grotesque","Instrument Sans",system-ui,sans-serif;
+      --font-body:"Instrument Sans",system-ui,-apple-system,sans-serif;
+      --font-mono:"Spline Sans Mono",ui-monospace,monospace;
+      --tracking-caps:0.12em;
+      --shadow-sm:0 1px 2px rgba(30,45,20,.06);
+      --shadow-md:0 2px 8px rgba(30,45,20,.08),0 1px 2px rgba(30,45,20,.05);
+      --shadow-lg:0 12px 32px rgba(30,45,20,.12),0 2px 8px rgba(30,45,20,.06);
+      --ease-out:cubic-bezier(.22,1,.36,1);
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:var(--font-body); color:var(--text-body); background:var(--cream-050); -webkit-font-smoothing:antialiased; line-height:1.55; }
+    h1,h2,h3 { font-family:var(--font-display); font-weight:700; letter-spacing:-.02em; color:var(--text-heading); margin:0; line-height:1.1; }
+    img { max-width:100%; display:block; }
+    a { color:var(--green-600); }
+    .eyebrow { font-family:var(--font-mono); font-size:12px; font-weight:500; letter-spacing:var(--tracking-caps); text-transform:uppercase; color:var(--green-600); }
+
+    /* ---- bară superioară (întoarcere la comandă) ---- */
+    .topbar {
+      position:sticky; top:0; z-index:50; background:rgba(251,249,243,.92); backdrop-filter:blur(8px);
+      border-bottom:1px solid var(--border-subtle);
+    }
+    .topbar-in { max-width:1180px; margin:0 auto; padding:12px 24px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .back-btn {
+      display:inline-flex; align-items:center; gap:8px; height:44px; padding:0 20px; border-radius:999px;
+      background:var(--green-600); color:#fff; font-family:var(--font-body); font-weight:600; font-size:14.5px;
+      text-decoration:none; border:none; cursor:pointer; transition:background .14s var(--ease-out);
+    }
+    .back-btn:hover { background:var(--green-700); color:#fff; }
+    .topbar .brand { display:flex; align-items:center; gap:10px; }
+    .topbar .brand img { height:28px; }
+    .topbar .brand span { font-family:var(--font-mono); font-size:11px; letter-spacing:var(--tracking-caps); text-transform:uppercase; color:var(--stone-600); }
+
+    section { padding:0; }
+    .wrap { max-width:1180px; margin:0 auto; padding:76px 24px; }
+
+    /* ---- 1 · copertă ---- */
+    .cover { background:var(--surface-dark); }
+    .cover-in { max-width:1180px; margin:0 auto; display:grid; grid-template-columns:1.05fr .95fr; align-items:stretch; }
+    .cover-text { padding:72px 48px 72px 24px; display:flex; flex-direction:column; justify-content:center; gap:28px; }
+    .cover-logo { width:230px; background:var(--cream-050); padding:14px 22px; border-radius:14px; }
+    .cover .kicker { font-family:var(--font-mono); font-size:15px; letter-spacing:var(--tracking-caps); color:var(--amber-400); text-transform:uppercase; }
+    .cover h1 { font-size:clamp(48px,7vw,92px); font-weight:800; color:var(--cream-050); }
+    .cover p { font-size:clamp(17px,2.2vw,21px); color:var(--green-200); max-width:22em; margin:0; }
+    .cover .place { font-family:var(--font-mono); font-size:14px; letter-spacing:.1em; text-transform:uppercase; color:var(--green-300); }
+    .cover .place a { color:var(--amber-400); }
+    .cover-photo { position:relative; min-height:420px; }
+    .cover-photo img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+    .cover-photo::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,var(--green-900) 0%,rgba(20,41,15,0) 40%); }
+
+    /* ---- 2 · din seră ---- */
+    .greenhouse { background:var(--cream-050); }
+    .greenhouse-in { max-width:1180px; margin:0 auto; display:grid; grid-template-columns:1fr 1fr; }
+    .greenhouse-photo { position:relative; min-height:360px; }
+    .greenhouse-photo img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+    .greenhouse-text { padding:72px 24px 72px 56px; display:flex; flex-direction:column; justify-content:center; gap:26px; }
+    .greenhouse-text h2 { font-size:clamp(30px,4vw,44px); }
+    .greenhouse-text p { font-size:18px; color:var(--text-body); max-width:24em; margin:0; }
+    .points { display:flex; flex-direction:column; gap:18px; border-top:1px solid var(--border-subtle); padding-top:26px; }
+    .point { display:flex; gap:16px; align-items:baseline; }
+    .point .n { font-family:var(--font-mono); font-size:15px; color:var(--amber-600); min-width:28px; }
+    .point span:last-child { font-size:15.5px; color:var(--text-body); }
+
+    /* ---- 3 · de ce granafarm ---- */
+    .why { background:var(--green-050); }
+    .why h2 { font-size:clamp(30px,4vw,44px); margin-bottom:44px; }
+    .why .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:22px; }
+    .promo { background:var(--cream-000); border:1px solid var(--border-subtle); border-radius:20px; padding:36px 32px; display:flex; flex-direction:column; gap:14px; }
+    .promo .big { font-family:var(--font-display); font-weight:800; font-size:60px; line-height:1; color:var(--green-600); }
+    .promo h3 { font-size:22px; }
+    .promo p { font-size:14.5px; color:var(--text-muted); margin:0; }
+
+    /* ---- 4 · privire de ansamblu ---- */
+    .overview { background:var(--cream-050); }
+    .ov-head { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex-wrap:wrap; margin-bottom:36px; }
+    .overview h2 { font-size:clamp(30px,4vw,44px); }
+    .ov-cal { font-family:var(--font-mono); font-size:14px; letter-spacing:.1em; text-transform:uppercase; color:var(--stone-600); }
+    .ov-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+    .ov-card { display:flex; align-items:center; gap:18px; background:var(--cream-000); border:1px solid var(--border-subtle); border-radius:16px; padding:14px 20px 14px 14px; }
+    .ov-name { font-family:var(--font-display); font-weight:700; font-size:20px; color:var(--text-heading); }
+    .ov-tag { font-family:var(--font-mono); font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--amber-600); margin-top:4px; }
+
+    /* tomată desenată în CSS (folosită ca „specimen") */
+    .tomato { position:relative; flex:none; border-radius:50%;
+      background:radial-gradient(circle at 34% 30%, var(--t-hi,#ff8a72), var(--t,#c4302b) 58%, var(--t-lo,#8f221d) 100%);
+      box-shadow:inset -6px -8px 16px rgba(0,0,0,.22), inset 5px 6px 12px rgba(255,255,255,.28); }
+    .tomato::before { content:""; position:absolute; top:-7%; left:50%; transform:translateX(-50%);
+      width:34%; height:20%; background:var(--green-600);
+      clip-path:polygon(50% 0,64% 42%,100% 38%,72% 62%,84% 100%,50% 74%,16% 100%,28% 62%,0 38%,36% 42%); }
+    .ov-card .tomato { width:64px; height:64px; }
+
+    /* ---- 5..13 · soiuri ---- */
+    .variety { border-top:1px solid var(--border-subtle); }
+    .variety:nth-child(even) .variety-in { direction:rtl; }
+    .variety:nth-child(even) .variety-in > * { direction:ltr; }
+    .variety-in { max-width:1180px; margin:0 auto; display:grid; grid-template-columns:.85fr 1.15fr; align-items:center; gap:0; }
+    .variety-visual { display:flex; align-items:center; justify-content:center; padding:56px 24px; min-height:340px; }
+    .variety-visual .tomato { width:min(280px,60vw); height:min(280px,60vw); }
+    .variety-body { padding:64px 24px 64px 48px; display:flex; flex-direction:column; gap:26px; }
+    .variety-body .kicker { font-family:var(--font-mono); font-size:14px; letter-spacing:.1em; text-transform:uppercase; color:var(--green-600); }
+    .variety-body h2 { font-size:clamp(36px,5vw,64px); font-weight:800; }
+    .variety-body .lead { font-size:17.5px; color:var(--text-body); max-width:24em; margin:0; }
+    .specs { display:flex; flex-direction:column; gap:14px; border-top:1px solid var(--border-subtle); padding-top:24px; }
+    .spec { display:flex; gap:20px; align-items:baseline; }
+    .spec .k { font-family:var(--font-mono); font-size:12.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--stone-600); min-width:92px; }
+    .spec .v { font-size:15px; color:var(--text-body); }
+    .tags { display:flex; flex-wrap:wrap; gap:10px; }
+    .tag { font-weight:600; font-size:14px; color:var(--green-800); background:var(--green-100); border-radius:999px; padding:8px 18px; }
+
+    /* ---- 14 · ghid ---- */
+    .guide { background:var(--green-050); }
+    .guide h2 { font-size:clamp(30px,4vw,44px); margin-bottom:40px; }
+    .guide .grid { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+    .guide-card { background:var(--cream-000); border:1px solid var(--border-subtle); border-radius:20px; padding:32px 34px; display:flex; flex-direction:column; gap:10px; }
+    .guide-card h3 { font-size:24px; }
+    .guide-card .picks { font-family:var(--font-mono); font-size:14px; letter-spacing:.06em; color:var(--green-600); }
+    .guide-card p { font-size:14.5px; color:var(--text-muted); margin:0; }
+
+    /* ---- 15 · alte produse ---- */
+    .more { background:var(--cream-050); }
+    .more h2 { font-size:clamp(30px,4vw,44px); margin-bottom:40px; }
+    .more .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:24px; }
+    .more-card { display:flex; flex-direction:column; gap:14px; }
+    .more-card .thumb { aspect-ratio:4/3; border-radius:14px; overflow:hidden; border:1px solid var(--border-subtle); }
+    .more-card .thumb img { width:100%; height:100%; object-fit:cover; }
+    .more-card h3 { font-size:21px; }
+    .more-card p { font-size:14px; color:var(--text-body); margin:0; }
+    .more-note { font-size:14.5px; color:var(--text-muted); max-width:44em; margin:32px 0 0; }
+
+    /* ---- 16 · contact ---- */
+    .contact { background:var(--surface-dark); text-align:center; }
+    .contact .wrap { display:flex; flex-direction:column; align-items:center; gap:26px; }
+    .contact .kicker { font-family:var(--font-mono); font-size:15px; letter-spacing:var(--tracking-caps); text-transform:uppercase; color:var(--amber-400); }
+    .contact h2 { font-size:clamp(38px,6vw,72px); font-weight:800; color:var(--cream-050); max-width:14em; }
+    .contact p { font-size:19px; color:var(--green-200); max-width:26em; margin:0; }
+    .contact .phone { font-family:var(--font-display); font-weight:800; font-size:clamp(38px,6vw,58px); color:var(--amber-400); }
+    .contact .person { font-size:15px; color:var(--green-300); }
+    .contact .cta {
+      display:inline-flex; align-items:center; gap:10px; height:52px; padding:0 30px; border-radius:999px;
+      background:var(--amber-400); color:var(--green-900); font-weight:700; font-size:16px; text-decoration:none; margin-top:6px;
+      transition:background .14s var(--ease-out);
+    }
+    .contact .cta:hover { background:var(--amber-500); color:var(--green-900); }
+    .contact .logo { width:200px; background:var(--cream-050); padding:14px 22px; border-radius:12px; margin-top:8px; }
+
+    @media (max-width:860px) {
+      .wrap { padding:52px 20px; }
+      .cover-in, .greenhouse-in, .variety-in { grid-template-columns:1fr; }
+      .variety:nth-child(even) .variety-in { direction:ltr; }
+      .cover-text { padding:48px 20px; order:2; }
+      .cover-photo { min-height:300px; order:1; }
+      .cover-photo::after { background:linear-gradient(0deg,var(--green-900) 0%,rgba(20,41,15,0) 55%); }
+      .greenhouse-photo { min-height:260px; }
+      .greenhouse-text { padding:48px 20px; }
+      .variety-visual { padding:44px 20px 8px; min-height:0; }
+      .variety-body { padding:20px 20px 52px; }
+      .why .grid, .ov-grid, .guide .grid { grid-template-columns:1fr; }
+      .more .grid { grid-template-columns:1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <!-- bară superioară · întoarcere la comandă -->
+  <div class="topbar">
+    <div class="topbar-in">
+      <a class="brand" href="/"><img src="/logo.png" alt="GranaFarm"><span>Catalog de soiuri</span></a>
+      <a class="back-btn" href="/">← Înapoi la comandă</a>
+    </div>
+  </div>
+
+  <!-- 1 · copertă -->
+  <section class="cover">
+    <div class="cover-in">
+      <div class="cover-text">
+        <img class="cover-logo" src="/logo.png" alt="GranaFarm">
+        <div class="kicker">Catalog de soiuri · 2026</div>
+        <h1>Roșiile noastre</h1>
+        <p>Nouă soiuri de roșii cultivate cu grijă în serele de sticlă GranaFarm — gust autentic, direct din fermă.</p>
+        <div class="place">Sat Cavarani · Caraș-Severin<br>Comandă online: <a href="/">comenzi.granafarm.ro</a></div>
+      </div>
+      <div class="cover-photo"><img src="/images/products/tomatoes.webp" alt="Soiuri de roșii GranaFarm"></div>
+    </div>
+  </section>
+
+  <!-- 2 · din seră -->
+  <section class="greenhouse">
+    <div class="greenhouse-in">
+      <div class="greenhouse-photo"><img src="/images/products/tomatoes.webp" alt="Roșii proaspete din seră"></div>
+      <div class="greenhouse-text">
+        <div class="eyebrow">Din sera noastră</div>
+        <h2>Crescute cu grijă, culese la maturitate</h2>
+        <p>Fiecare roșie se coace natural pe vrej, în serele noastre de sticlă, și este culeasă doar când a ajuns la gustul potrivit — nu mai devreme.</p>
+        <div class="points">
+          <div class="point"><span class="n">01</span><span>Seră de sticlă — mediu controlat, curat, producție constantă tot anul</span></div>
+          <div class="point"><span class="n">02</span><span>Coacere naturală pe vrej — aroma se formează în plantă, nu în depozit</span></div>
+          <div class="point"><span class="n">03</span><span>Cules manual, la maturitate deplină — fermitate și gust intacte</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · de ce granafarm -->
+  <section class="why"><div class="wrap">
+    <div class="eyebrow">De ce GranaFarm</div>
+    <h2>Partenerul tău de prospețime</h2>
+    <div class="grid">
+      <div class="promo"><div class="big">24h</div><h3>Culese la livrare</h3><p>Roșiile sunt culese în aceeași zi sau cu o zi înainte de livrare — ajung la tine cu gustul și fermitatea intacte.</p></div>
+      <div class="promo"><div class="big">0 lei</div><h3>Transport gratuit</h3><p>Livrăm gratuit direct la locația ta — restaurant, pizzerie sau bistro — fără costuri ascunse.</p></div>
+      <div class="promo"><div class="big">9</div><h3>Soiuri, direct din fermă</h3><p>Fără intermediari: lucrezi direct cu producătorul și alegi soiul potrivit pentru fiecare preparat.</p></div>
+    </div>
+  </div></section>
+
+  <!-- 4 · privire de ansamblu -->
+  <section class="overview"><div class="wrap">
+    <div class="ov-head">
+      <div>
+        <div class="eyebrow">Catalogul de soiuri</div>
+        <h2>Nouă soiuri, trei calibre</h2>
+      </div>
+      <div class="ov-cal">Mari · Medii · Mici</div>
+    </div>
+    <div class="ov-grid" id="ov-grid"></div>
+  </div></section>
+
+  <!-- 5..13 · soiuri (injectate) -->
+  <div id="varieties"></div>
+
+  <!-- 14 · ghid -->
+  <section class="guide"><div class="wrap">
+    <div class="eyebrow">Ghid de utilizare</div>
+    <h2>Soiul potrivit pentru bucătăria ta</h2>
+    <div class="grid">
+      <div class="guide-card"><h3>Salate &amp; platouri</h3><div class="picks">Inimă de Bou · De Grădină · Roz Dov</div><p>Felii mari, cărnoase, cu gust dulce.</p></div>
+      <div class="guide-card"><h3>Sosuri &amp; pizza</h3><div class="picks">Roma · De Buzău</div><p>Pulpă densă, puține semințe, ideale pentru sos și passata.</p></div>
+      <div class="guide-card"><h3>Burgeri &amp; sandvișuri</h3><div class="picks">Tolstoi · Roz Rose</div><p>Felii uniforme, ferme, care nu înmoaie chifla.</p></div>
+      <div class="guide-card"><h3>Garnituri &amp; decor</h3><div class="picks">Negre de Crimeea</div><p>Culoare spectaculoasă și gust intens, pentru farfurii cu personalitate.</p></div>
+    </div>
+  </div></section>
+
+  <!-- 15 · alte produse -->
+  <section class="more"><div class="wrap">
+    <div class="eyebrow">Disponibile la comandă</div>
+    <h2>Și mai mult din grădina noastră</h2>
+    <div class="grid">
+      <div class="more-card"><div class="thumb"><img src="/images/products/vegetables.webp" alt="Legume proaspete"></div><h3>Legume proaspete</h3><p>Castraveți cornișon, ardei alb, capia și gogoșari, fasole verde, vinete de grădină, ceapă verde, cartofi roz.</p></div>
+      <div class="more-card"><div class="thumb"><img src="/images/products/fruit.webp" alt="Fructe de sezon"></div><h3>Fructe de sezon</h3><p>Căpșuni și zmeură, culese în ziua livrării.</p></div>
+      <div class="more-card"><div class="thumb"><img src="/images/products/preserves.webp" alt="Din cămara fermei"></div><h3>Din cămara fermei</h3><p>Bulion, pastă de roșii, dulceață de zmeură, caise și căpșuni, sirop de zmeură.</p></div>
+      <div class="more-card"><div class="thumb"><img src="/images/products/pickles.webp" alt="Murături"></div><h3>Murături</h3><p>Castraveți murați cu sare (natural), varză murată, ardei umpluți cu varză.</p></div>
+    </div>
+    <p class="more-note">Toate se livrează în aceleași condiții de prospețime ca roșiile — direct din fermă, fără intermediari.</p>
+  </div></section>
+
+  <!-- 16 · contact -->
+  <section class="contact"><div class="wrap">
+    <div class="kicker">Comenzi &amp; colaborări</div>
+    <h2>Proaspete, direct din seră</h2>
+    <p>Sună-ne pentru mostre, prețuri și livrări recurente pentru restaurantul tău.</p>
+    <div class="phone">0733 961 801</div>
+    <div class="person">Persoană de contact: Isfan Marinela · Transport gratuit</div>
+    <a class="cta" href="/">Comandă online →</a>
+    <img class="logo" src="/logo.png" alt="GranaFarm">
+  </div></section>
+
+  <script src="/catalog.js"></script>
+</body>
+</html>
