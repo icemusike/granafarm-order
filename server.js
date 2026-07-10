@@ -739,6 +739,10 @@ app.get('/api/orders/track/:token', asyncRoute(async (req, res) => {
     })),
     subtotal: Number(order.subtotal),
     deliveryFee: Number(order.deliveryFee),
+    discountAmount: Number(order.discountAmount) || 0,
+    discountLabel: order.discount && order.discount.type === 'percent'
+      ? `Discount ${order.discount.value}%`
+      : 'Discount',
     total: Number(order.total),
     canReorder: ['restaurant', 'magazin', 'angro'].includes(order.customer.type),
   });
@@ -838,10 +842,48 @@ app.patch('/api/admin/orders/:id', requireAdmin, asyncRoute(async (req, res) => 
     if (nextItems.length === 0) {
       return res.status(400).json({ error: 'Comanda trebuie să păstreze cel puțin un produs.' });
     }
-    const subtotal = round2(nextItems.reduce((sum, item) => sum + item.price * item.qty, 0));
     patch.items = nextItems;
+    patch.subtotal = round2(nextItems.reduce((sum, item) => sum + item.price * item.qty, 0));
+  }
+
+  // Discount pe comandă: procent din subtotal sau sumă fixă în lei.
+  // null (sau valoare goală) elimină discountul.
+  let discountProvided = false;
+  let nextDiscount = existing.discount || null;
+  if (body.discount !== undefined) {
+    discountProvided = true;
+    if (body.discount === null || body.discount === '') {
+      nextDiscount = null;
+    } else {
+      if (typeof body.discount !== 'object' || Array.isArray(body.discount)) {
+        return res.status(400).json({ error: 'Discount invalid.' });
+      }
+      const type = String(body.discount.type);
+      const value = round2(Number(body.discount.value));
+      if (!['percent', 'amount'].includes(type) || !Number.isFinite(value) || value <= 0
+        || (type === 'percent' && value > 100)) {
+        return res.status(400).json({ error: 'Discount invalid: procent între 0 și 100 sau o sumă în lei.' });
+      }
+      nextDiscount = { type, value };
+    }
+  }
+
+  // Totalul se recalculează când se schimbă articolele sau discountul:
+  // total = subtotal + taxă livrare − discount.
+  if (patch.items || discountProvided) {
+    const subtotal = patch.subtotal != null ? patch.subtotal : round2(existing.subtotal);
+    const fee = round2(existing.deliveryFee || 0);
+    let discountAmount = 0;
+    if (nextDiscount) {
+      discountAmount = nextDiscount.type === 'percent'
+        ? round2(subtotal * nextDiscount.value / 100)
+        : round2(nextDiscount.value);
+      discountAmount = Math.min(discountAmount, round2(subtotal + fee));
+    }
+    patch.discount = nextDiscount;
+    patch.discountAmount = discountAmount;
     patch.subtotal = subtotal;
-    patch.total = round2(subtotal + (existing.deliveryFee || 0));
+    patch.total = round2(subtotal + fee - discountAmount);
   }
 
   let order = existing;
@@ -1016,6 +1058,20 @@ app.post('/api/admin/orders/:id/invoice', requireAdmin, asyncRoute(async (req, r
       price: round2(order.deliveryFee),
       qty: 1,
       lineTotal: round2(order.deliveryFee),
+    });
+  }
+  // Discountul apare pe factură ca linie negativă, înainte de total.
+  if (Number(order.discountAmount) > 0) {
+    const label = order.discount && order.discount.type === 'percent'
+      ? `Discount ${order.discount.value}%`
+      : 'Discount';
+    invoiceItems.push({
+      productId: null,
+      name: label,
+      unit: 'reducere',
+      price: -round2(order.discountAmount),
+      qty: 1,
+      lineTotal: -round2(order.discountAmount),
     });
   }
   const computed = {
