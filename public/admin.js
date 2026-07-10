@@ -565,10 +565,59 @@ function orderDeliveryDate(o) {
   return o.customer.deliveryDate || o.delivery?.date || '';
 }
 
+// Traduceri în nepaleză (नेपाली) pentru angajații din seră. Numele de soi
+// (De Grădină, Roma etc.) rămân în original, ca nume proprii.
+const NE_PRODUCTS = [
+  [/pastă de roșii|pasta de rosii/i, 'गोलभेडाको पेस्ट'],
+  [/bulion/i, 'गोलभेडाको सस (बुलियोन)'],
+  [/roșii|rosii|tomate/i, 'गोलभेडा'],
+  [/castraveți murați|castraveti murati/i, 'नुनमा राखेको काँक्रो (अचार)'],
+  [/castrave/i, 'काँक्रो'],
+  [/ardei umplu/i, 'बन्दा भरिएको खुर्सानी'],
+  [/ardei iute/i, 'पिरो खुर्सानी'],
+  [/ardei/i, 'भेडे खुर्सानी'],
+  [/fasole verde/i, 'हरियो सिमी'],
+  [/vinete/i, 'भ्यान्टा'],
+  [/ceapă verde|ceapa verde/i, 'हरियो प्याज'],
+  [/cartofi/i, 'आलु'],
+  [/căpșuni|capsuni/i, 'स्ट्रबेरी'],
+  [/zmeură|zmeura/i, 'रास्बेरी'],
+  [/varză murată|varza murata/i, 'अचारको बन्दागोभी'],
+  [/varză|varza/i, 'बन्दागोभी'],
+  [/dulceață|dulceata|gem/i, 'जाम'],
+  [/sirop/i, 'सिरप'],
+  [/usturoi/i, 'लसुन'],
+  [/morcov/i, 'गाजर'],
+  [/salat/i, 'सलाद पात'],
+];
+const NE_UNITS = { kg: 'केजी', 'bucată': 'वटा', 'legătură': 'मुठा', 'ladă': 'बाकस', borcan: 'जार', litru: 'लिटर' };
+const NE_QUALIFIERS = [
+  [/alb/i, 'सेतो'], [/roz/i, 'गुलाबी'], [/verde/i, 'हरियो'], [/negre|negru/i, 'कालो'],
+  [/caise/i, 'खुर्पानी'], [/căpșuni|capsuni/i, 'स्ट्रबेरी'], [/zmeură|zmeura/i, 'रास्बेरी'],
+];
+
+// „Roșii De Grădină" -> „गोलभेडा — De Grădină"; produsele necunoscute rămân
+// doar cu numele românesc.
+function neProductName(name) {
+  const hit = NE_PRODUCTS.find(([re]) => re.test(name));
+  if (!hit) return '';
+  let ne = hit[1];
+  // calificative simple (culoare / fruct) pentru diferențiere
+  for (const [re, word] of NE_QUALIFIERS) {
+    if (re.test(name) && !ne.includes(word)) { ne = `${word} ${ne}`; break; }
+  }
+  // soiurile de roșii păstrează numele soiului în original
+  const variety = name.match(/^Ro[șs]ii\s+(.+)$/i);
+  if (variety && hit[1] === 'गोलभेडा') ne = `गोलभेडा — ${variety[1]}`;
+  return ne;
+}
+const neUnit = (unit) => NE_UNITS[unit] || unit;
+
 function buildHarvestSheet() {
   const date = document.getElementById('harvest-date').value;
   if (!date) { alert('Alegeți ziua de livrare pentru fișa de cules.'); return; }
   const includeNew = document.getElementById('harvest-include-new').checked;
+  const bilingual = document.getElementById('harvest-lang').value === 'ne';
   const statuses = includeNew ? ['noua', 'confirmata', 'in_livrare'] : ['confirmata', 'in_livrare'];
   const dayOrders = orders.filter((o) => statuses.includes(o.status) && orderDeliveryDate(o) === date);
 
@@ -592,26 +641,42 @@ function buildHarvestSheet() {
     })
     .sort((a, b) => a.name.localeCompare(b.name, 'ro'));
 
+  // totalul general în kilograme (doar produsele vândute la kg)
+  const totalKg = Math.round(rows.filter((r) => r.unit === 'kg').reduce((sum, r) => sum + r.qty, 0) * 100) / 100;
+  const otherUnits = rows.filter((r) => r.unit !== 'kg').length;
+
   const dateLabel = new Date(date + 'T00:00:00').toLocaleDateString('ro-RO', { dateStyle: 'full' });
   const fmtQty = (q) => (q % 1 === 0 ? String(q) : String(q).replace('.', ','));
 
+  // celulă de produs: românește + (opțional) nepaleză dedesubt
+  const productCell = (name) => {
+    const ne = bilingual ? neProductName(name) : '';
+    return `${esc(name)}${ne ? `<div class="ne">${esc(ne)}</div>` : ''}`;
+  };
+  const qtyCell = (qty, unit) => bilingual
+    ? `<b>${fmtQty(qty)} ${esc(unit)}</b><div class="ne">${fmtQty(qty)} ${esc(neUnit(unit))}</div>`
+    : `<b>${fmtQty(qty)} ${esc(unit)}</b>`;
+  // etichetă bilingvă: RO · नेपाली
+  const bi = (ro, ne) => bilingual ? `${ro} <span class="ne-inline">· ${ne}</span>` : ro;
+
   const aggregateTable = `
-    <table><thead><tr><th style="width:40px;">✔</th><th>Produs</th><th class="num">Cantitate de pregătit</th></tr></thead>
-    <tbody>${rows.map((r) => `<tr><td class="checkbox-cell">☐</td><td>${esc(r.name)}</td><td class="num"><b>${fmtQty(r.qty)} ${esc(r.unit)}</b></td></tr>`).join('')}</tbody></table>`;
+    <table><thead><tr><th style="width:40px;">✔</th><th>${bi('Produs', 'उत्पादन')}</th><th class="num">${bi('Cantitate de pregătit', 'तयार पार्ने परिमाण')}</th></tr></thead>
+    <tbody>${rows.map((r) => `<tr><td class="checkbox-cell">☐</td><td>${productCell(r.name)}</td><td class="num">${qtyCell(r.qty, r.unit)}</td></tr>`).join('')}
+    <tr class="kg-total"><td></td><td><b>${bi('TOTAL KILOGRAME', 'जम्मा केजी')}</b>${otherUnits ? `<div class="hint">${bi(`+ încă ${otherUnits} produse în alte unități (bucăți, legături etc.)`, `+ अन्य एकाइका ${otherUnits} उत्पादनहरू`)}</div>` : ''}</td><td class="num"><b>${fmtQty(totalKg)} kg${bilingual ? ` <span class="ne-inline">/ ${fmtQty(totalKg)} केजी</span>` : ''}</b></td></tr></tbody></table>`;
 
   const perOrder = dayOrders.map((o) => `
     <div class="order-block">
       <div class="order-title">${esc(o.number)} — ${esc(o.customer.name)}${o.customer.company ? ' · ' + esc(o.customer.company) : ''}
         <span class="order-meta">${esc(o.customer.city)}${o.delivery?.windowLabel ? ' · ' + esc(o.delivery.windowLabel) : ''} · ${STATUS_LABELS[o.status]}</span></div>
-      <table><tbody>${o.items.map((i) => `<tr><td>${esc(i.name)}</td><td class="num">${fmtQty(i.qty)} ${esc(i.unit)}</td></tr>`).join('')}</tbody></table>
+      <table><tbody>${o.items.map((i) => `<tr><td>${productCell(i.name)}</td><td class="num">${qtyCell(i.qty, i.unit)}</td></tr>`).join('')}</tbody></table>
     </div>`).join('');
 
   printWindow(`Fișă de cules — ${dateLabel}`, `
-    <h1>🌱 Fișă de cules</h1>
-    <p class="sub">Livrare: <b>${esc(dateLabel)}</b> · ${dayOrders.length} ${dayOrders.length === 1 ? 'comandă' : 'comenzi'} · generată ${new Date().toLocaleString('ro-RO', { dateStyle: 'short', timeStyle: 'short' })}</p>
-    <h2>Total de cules (toate comenzile)</h2>
+    <h1>🌱 ${bi('Fișă de cules', 'टिप्ने सूची')}</h1>
+    <p class="sub">${bi('Livrare', 'डेलिभरी मिति')}: <b>${esc(dateLabel)}</b> · ${dayOrders.length} ${dayOrders.length === 1 ? 'comandă' : 'comenzi'}${bilingual ? ` <span class="ne-inline">· ${dayOrders.length} अर्डर</span>` : ''} · generată ${new Date().toLocaleString('ro-RO', { dateStyle: 'short', timeStyle: 'short' })}</p>
+    <h2>${bi('Total de cules (toate comenzile)', 'जम्मा टिप्नुपर्ने (सबै अर्डरहरू)')}</h2>
     ${aggregateTable}
-    <h2 style="margin-top:26px;">Detaliu pe comandă (pentru împachetare)</h2>
+    <h2 style="margin-top:26px;">${bi('Detaliu pe comandă (pentru împachetare)', 'अर्डर अनुसार विवरण (प्याक गर्न)')}</h2>
     ${perOrder}`);
 }
 
@@ -630,6 +695,10 @@ function printWindow(title, bodyHtml) {
       th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7d74; }
       .num { text-align: right; white-space: nowrap; }
       .checkbox-cell { font-size: 1.1rem; }
+      .ne { font-size: 1.02rem; color: #1e4d21; margin-top: 2px; font-weight: 600; }
+      .ne-inline { color: #1e4d21; font-weight: 600; }
+      .kg-total td { border-top: 3px double #22302A; border-bottom: none; font-size: 1.08rem; padding-top: 10px; }
+      .hint { font-weight: 400; font-size: 0.78rem; color: #6b7d74; }
       .order-block { margin-bottom: 14px; }
       .order-block table { font-size: 0.9rem; margin-bottom: 4px; }
       .order-block td { padding: 4px 6px; }

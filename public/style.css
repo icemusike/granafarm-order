@@ -1782,3 +1782,14 @@ img.image-unavailable { background: linear-gradient(135deg, #e3eee5, #f8eee0); }
 .discount-edit select:focus, .discount-edit input:focus { outline: none; border-color: var(--gold); box-shadow: var(--focus-ring); }
 .discount-edit input:disabled { opacity: 0.5; background: var(--light-gray); }
 .discount-hint { font-weight: 700; color: var(--green-dark); font-size: 0.95rem; }
+
+.harvest-controls select {
+  padding: 9px 12px;
+  border: 2px solid rgba(76, 175, 80, 0.35);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  background: var(--white);
+  cursor: pointer;
+}
+.harvest-controls select:focus { outline: none; border-color: var(--gold); box-shadow: var(--focus-ring); }
