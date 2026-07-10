@@ -610,6 +610,13 @@ function renderSettings() {
         ? 'SMS-urile sunt <b>active</b>, folosind datele Twilio completate mai jos.'
         : 'SMS-urile sunt <b>active</b>, folosind variabilele de mediu Twilio setate pe host.')
       : 'SMS-urile rulează în <b>mod simulat</b> — completați datele Twilio mai jos pentru trimitere reală.';
+
+  // Precompletăm destinatarii testelor cu datele proprietarului (doar dacă sunt goi,
+  // ca să nu suprascriem ce a scris utilizatorul).
+  const teEl = document.getElementById('test-email-to');
+  if (teEl && !teEl.value) teEl.value = settings.ownerEmail || '';
+  const tsEl = document.getElementById('test-sms-to');
+  if (tsEl && !tsEl.value) tsEl.value = settings.ownerPhone || '';
 }
 
 async function saveSettingsPatch(payload, msgId, successMsg) {
@@ -674,32 +681,48 @@ async function saveTwilio() {
 
 async function sendTestSms() {
   const msg = document.getElementById('twilio-msg');
-  if (!settings.ownerPhone) {
-    msg.innerHTML = '<div class="msg msg-error">Completați telefonul proprietarului în secțiunea Configurare.</div>';
+  const to = document.getElementById('test-sms-to').value.trim();
+  if (!to) {
+    msg.innerHTML = '<div class="msg msg-error">Introduceți numărul de telefon către care să trimitem SMS-ul de test.</div>';
+    document.getElementById('test-sms-to').focus();
     return;
   }
-  msg.innerHTML = `<div class="msg msg-success">Se trimite SMS de test către ${esc(settings.ownerPhone)}...</div>`;
-  const res = await api('/api/admin/test-sms', { method: 'POST', body: '{}' });
-  const data = await res.json();
-  msg.innerHTML = res.ok
-    ? `<div class="msg msg-success">SMS de test: <b>${esc(data.status)}</b> către ${esc(data.to)}.</div>`
-    : `<div class="msg msg-error">${esc(data.error)}</div>`;
-  api('/api/admin/sms-log').then((r) => r.json()).then((d) => { smsInfo = d; renderSmsLog(); });
+  const btn = document.getElementById('test-sms-btn');
+  btn.disabled = true;
+  msg.innerHTML = `<div class="msg msg-success">Se trimite SMS de test către ${esc(to)}...</div>`;
+  try {
+    const res = await api('/api/admin/test-sms', { method: 'POST', body: JSON.stringify({ to }) });
+    const data = await res.json();
+    msg.innerHTML = res.ok
+      ? `<div class="msg msg-success">SMS de test: <b>${esc(data.status)}</b> către ${esc(data.to)}.</div>`
+      : `<div class="msg msg-error">${esc(data.error)}</div>`;
+    api('/api/admin/sms-log').then((r) => r.json()).then((d) => { smsInfo = d; renderSmsLog(); });
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function sendTestEmail() {
   const msg = document.getElementById('postmark-msg');
-  if (!settings.ownerEmail) {
-    msg.innerHTML = '<div class="msg msg-error">Completați email-ul proprietarului în secțiunea de mai sus (Date firmă).</div>';
+  const to = document.getElementById('test-email-to').value.trim();
+  if (!to) {
+    msg.innerHTML = '<div class="msg msg-error">Introduceți adresa de email către care să trimitem mesajul de test.</div>';
+    document.getElementById('test-email-to').focus();
     return;
   }
-  msg.innerHTML = `<div class="msg msg-success">Se trimite email de test către ${esc(settings.ownerEmail)}...</div>`;
-  const res = await api('/api/admin/test-email', { method: 'POST', body: '{}' });
-  const data = await res.json();
-  msg.innerHTML = res.ok
-    ? `<div class="msg msg-success">Email de test: <b>${esc(data.status)}</b> către ${esc(data.to)}.</div>`
-    : `<div class="msg msg-error">${esc(data.error)}</div>`;
-  api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
+  const btn = document.getElementById('test-email-btn');
+  btn.disabled = true;
+  msg.innerHTML = `<div class="msg msg-success">Se trimite email de test către ${esc(to)}...</div>`;
+  try {
+    const res = await api('/api/admin/test-email', { method: 'POST', body: JSON.stringify({ to }) });
+    const data = await res.json();
+    msg.innerHTML = res.ok
+      ? `<div class="msg msg-success">Email de test: <b>${esc(data.status)}</b> către ${esc(data.to)}.</div>`
+      : `<div class="msg msg-error">${esc(data.error)}</div>`;
+    api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function renderMarketingCount() {

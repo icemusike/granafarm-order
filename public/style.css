@@ -1036,6 +1036,33 @@ footer.site {
 .export-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
 .export-count { color: var(--muted); font-size: 0.85rem; }
 
+.test-send {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--line);
+}
+.test-send > label { display: block; font-size: 0.85rem; font-weight: 700; color: var(--charcoal); margin-bottom: 8px; }
+.test-send-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; }
+.test-send-row input {
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 2px solid rgba(76, 175, 80, 0.35);
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  font-family: var(--font-body);
+  background: var(--white);
+  color: var(--ink);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.test-send-row input:focus { outline: none; border-color: var(--gold); box-shadow: var(--focus-ring); }
+.test-send-row .btn { flex: none; white-space: nowrap; }
+.test-send-hint { color: var(--muted); font-size: 0.8rem; margin: 10px 0 0; }
+
+@media (max-width: 640px) {
+  .test-send-row .btn { width: 100%; }
+}
+
 @media (max-width: 760px) {
   .charts-grid { grid-template-columns: 1fr; }
 }

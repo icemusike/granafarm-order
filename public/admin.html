@@ -215,7 +215,15 @@
           <div id="postmark-msg"></div>
           <div class="actions">
             <button class="btn btn-primary" id="save-postmark-btn">Salvează configurarea email</button>
-            <button class="btn btn-ghost" id="test-email-btn">✉️ Trimite email de test</button>
+          </div>
+
+          <div class="test-send">
+            <label for="test-email-to">✉️ Testează trimiterea către o adresă de email</label>
+            <div class="test-send-row">
+              <input id="test-email-to" type="email" placeholder="ex: proprietar@granafarm.ro">
+              <button class="btn btn-ghost" id="test-email-btn">Trimite email de test</button>
+            </div>
+            <p class="test-send-hint">Se trimite un mesaj de probă la adresa de mai sus. Salvați mai întâi tokenul Postmark și activați trimiterea pentru un test real; altfel mesajul apare doar în jurnal (mod simulat).</p>
           </div>
         </div>
 
@@ -286,7 +294,15 @@
           <div id="twilio-msg"></div>
           <div class="actions">
             <button class="btn btn-primary" id="save-twilio-btn">Salvează configurarea Twilio</button>
-            <button class="btn btn-ghost" id="test-sms-btn">📤 Trimite SMS de test</button>
+          </div>
+
+          <div class="test-send">
+            <label for="test-sms-to">📤 Testează trimiterea către un număr de telefon</label>
+            <div class="test-send-row">
+              <input id="test-sms-to" type="tel" placeholder="ex: 0722 123 456">
+              <button class="btn btn-ghost" id="test-sms-btn">Trimite SMS de test</button>
+            </div>
+            <p class="test-send-hint">Se trimite un SMS de probă la numărul de mai sus. Salvați mai întâi datele Twilio pentru un test real; altfel mesajul apare doar în jurnal (mod simulat).</p>
           </div>
         </div>
 
