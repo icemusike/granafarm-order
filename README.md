@@ -13,12 +13,16 @@ Demo-ul folosește aceeași interfață, dar datele (comenzi, produse, facturi) 
 ## Funcționalități
 
 ### Pentru clienți — pagina principală (`/`)
-- Catalog de produse cu prețuri și unități de măsură (kg, bucată, legătură)
-- Alegerea cantității pentru fiecare produs, cu sumar și total calculat automat, plus bară de coș fixă cu totalul
-- Formular cu date de contact și livrare: nume, firmă, CUI (pentru factură), tip client, telefon, email, localitate, adresă de livrare, data dorită de livrare, observații
+- Catalog cu fotografii, căutare fără diferențe de diacritice, filtre pe categorii și secțiuni pliabile
+- Stoc, disponibilitatea recoltei, ambalare, cantitate minimă și termen estimat afișate pentru fiecare produs
+- Coș dedicat, păstrat în browser la reîncărcarea paginii și reconciliat cu prețurile și disponibilitatea curentă
+- Livrare gratuită, oră-limită, zile lucrătoare și intervale selectabile
+- Pin exact de livrare pe Google Maps (când este configurată cheia de browser)
+- Checkout scurt, cu validare accesibilă direct lângă câmp și datele firmei afișate numai când sunt necesare
 - **„Ține minte datele mele"**: la o comandă viitoare de pe același telefon/computer, formularul se completează automat cu datele anterioare (nume, firmă, CUI, telefon, email, adresă) — clientul poate șterge oricând datele salvate cu un link „Nu sunt eu"
 - Bifă opțională „Vreau să primesc oferte prin email" (marketing)
-- Confirmare cu număr de comandă după trimitere
+- Confirmare imediată prin interfață și SMS/email, cu link privat pentru urmărirea statusului
+- „Comandă din nou” pentru restaurante, magazine și clienți angro, folosind produsele și prețurile disponibile acum
 
 ### Pentru proprietar — panoul de administrare (`/admin`)
 Protejat cu parolă, organizat pe secțiuni cu navigare:
@@ -51,6 +55,10 @@ Prețurile din catalog **includ TVA**. La emiterea facturii, aplicația defalcă
 
 ## Instalare și pornire
 
+Pentru harta de livrare, adaugă `GOOGLE_MAPS_BROWSER_API_KEY` în `.env`. Cheia
+este una de browser și trebuie restricționată prin HTTP referrer la domeniul
+aplicației (plus `http://localhost:*` pentru dezvoltare).
+
 Necesită [Node.js](https://nodejs.org) versiunea 18 sau mai nouă.
 
 ```bash
@@ -62,6 +70,12 @@ Aplicația pornește pe [http://localhost:3000](http://localhost:3000).
 
 - Pagina de comandă: `http://localhost:3000/`
 - Panoul de administrare: `http://localhost:3000/admin`
+
+Testele de integrare pentru prețuri, reguli de livrare, notificare și urmărirea privată rulează cu:
+
+```bash
+npm test
+```
 
 ### Parola de administrare
 
@@ -95,6 +109,7 @@ Pași (o singură dată, ~5 minute):
 5. Legați baza de serviciul web: la serviciul `granafarm-order` → **Variables** → **New Variable → Add Reference** → alegeți `DATABASE_URL` din serviciul Postgres. (Pe Railway, referința se face de obicei automat în același proiect.)
 6. Tot la **Variables**, adăugați:
    - `ADMIN_PASSWORD` = o parolă sigură aleasă de dumneavoastră (obligatorie).
+   - `APP_BASE_URL` = adresa HTTPS publică a aplicației, fără `/` la final (recomandat pentru linkurile private de urmărire, ex. `https://comenzi.granafarm.ro`).
    - *(opțional, pentru SMS real)* `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`.
 7. La serviciul web → **Settings → Networking → Generate Domain** pentru o adresă publică (ex. `granafarm-order-production.up.railway.app`). Gata de comenzi!
 
@@ -105,6 +120,8 @@ Costuri orientative pe Railway: consum măsurat, tipic ~5–10 $/lună pentru un
 ### Alternativă: Render (blueprint automat)
 
 Repo-ul conține și `render.yaml`, care pe [render.com](https://render.com) creează serverul + baza PostgreSQL împreună: **New → Blueprint → alegeți repo-ul → Apply**. `DATABASE_URL` și `ADMIN_PASSWORD` se configurează automat.
+
+Render și Railway oferă automat domeniul public aplicației. Dacă folosiți un domeniu propriu sau un VPS, setați explicit `APP_BASE_URL` pentru ca mesajele de confirmare să conțină linkul HTTPS corect de urmărire.
 
 ### Activarea SMS-urilor reale (Twilio)
 
@@ -139,6 +156,7 @@ docker build -t granafarm .
 docker run -d -p 3000:3000 \
   -e DATABASE_URL="postgres://user:parola@host:5432/granafarm" \
   -e ADMIN_PASSWORD="parola-sigura" \
+  -e APP_BASE_URL="https://comenzi.granafarm.ro" \
   -e TWILIO_ACCOUNT_SID=... -e TWILIO_AUTH_TOKEN=... -e TWILIO_FROM=... \
   granafarm
 ```
@@ -152,6 +170,9 @@ lib/storage-postgres.js — stocare PostgreSQL (producție)
 lib/storage-json.js     — stocare fișier JSON (dezvoltare)
 lib/seed.js             — catalogul și setările inițiale
 public/                 — interfața (pagina de comandă, panou admin, stiluri, logo)
+public/track.html       — pagina privată de urmărire și refacere a comenzii
+public/images/products/ — fotografiile optimizate ale familiilor de produse
+test/                   — teste de integrare cu stocare JSON izolată
 demo/demo-api.js        — adaptor localStorage pentru demo-ul static (GitHub Pages)
 railway.json           — configurație publicare Railway (recomandat)
 render.yaml, Dockerfile — publicare pe Render / alte hosturi

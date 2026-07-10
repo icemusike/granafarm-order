@@ -4,7 +4,8 @@
   "description": "Aplicație de comenzi legume pentru GranaFarm — sera de legume proaspete",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"

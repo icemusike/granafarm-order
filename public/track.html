@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Urmărește în siguranță starea comenzii GranaFarm.">
+  <title>Urmărește comanda — GranaFarm</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="track-page">
+  <a class="skip-link" href="#main-content">Sari la conținut</a>
+  <header class="site customer-header">
+    <div class="wrap">
+      <a class="brand" href="/" aria-label="GranaFarm — comandă nouă">
+        <img class="brand-logo" src="/logo.png" alt="GranaFarm">
+        <span class="brand-tag">Urmărire privată a comenzii</span>
+      </a>
+      <a class="header-link" href="/">Catalog</a>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <div class="tracking-shell">
+      <div class="tracking-intro">
+        <p class="eyebrow">Actualizare comandă</p>
+        <h1>De la fermă până la tine</h1>
+        <p>Aici vezi progresul și detaliile de livrare, fără datele personale ale clientului.</p>
+      </div>
+
+      <section id="tracking-loading" class="card tracking-state" aria-live="polite">
+        <h2>Încărcăm comanda…</h2>
+        <p>Verificăm cea mai recentă stare.</p>
+      </section>
+
+      <section id="tracking-error" class="card tracking-state hidden" role="alert">
+        <h2>Linkul nu poate fi deschis</h2>
+        <p id="tracking-error-message">Verifică dacă ai copiat linkul complet.</p>
+        <a class="btn btn-primary" href="/">Înapoi la catalog</a>
+      </section>
+
+      <div id="tracking-content" class="hidden">
+        <section class="card tracking-card" aria-labelledby="tracking-order-title">
+          <div class="tracking-overview">
+            <div>
+              <p class="eyebrow">Comandă</p>
+              <p class="tracking-number" id="tracking-order-title"></p>
+            </div>
+            <span class="tracking-status-badge" id="tracking-status"></span>
+          </div>
+          <ol class="status-timeline" id="status-timeline" aria-label="Progresul comenzii"></ol>
+        </section>
+
+        <div class="tracking-grid">
+          <section class="card tracking-card" aria-labelledby="delivery-summary-title">
+            <h2 id="delivery-summary-title">Livrare</h2>
+            <dl class="tracking-detail">
+              <div><dt>Data estimată</dt><dd id="tracking-delivery-date"></dd></div>
+              <div><dt>Interval</dt><dd id="tracking-delivery-window"></dd></div>
+              <div><dt>Localitate</dt><dd id="tracking-city"></dd></div>
+              <div><dt>Comandă plasată</dt><dd id="tracking-created-at"></dd></div>
+            </dl>
+          </section>
+
+          <section class="card tracking-card" aria-labelledby="tracking-products-title">
+            <h2 id="tracking-products-title">Produse</h2>
+            <div class="tracking-items" id="tracking-items"></div>
+            <dl class="totals-list">
+              <div><dt>Produse</dt><dd id="tracking-subtotal"></dd></div>
+              <div><dt>Livrare</dt><dd id="tracking-fee"></dd></div>
+              <div class="grand-total"><dt>Total</dt><dd id="tracking-total"></dd></div>
+            </dl>
+          </section>
+        </div>
+
+        <section class="tracking-actions">
+          <a id="tracking-reorder-link" class="btn btn-primary hidden" href="/" rel="noreferrer">Comandă din nou</a>
+          <p class="privacy-note">Păstrează acest link privat. El oferă acces la detaliile comenzii, dar nu afișează numele, telefonul sau adresa stradală.</p>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site"><strong>GranaFarm</strong> · Produse locale, livrate planificat</footer>
+  <script src="/track.js"></script>
+</body>
+</html>

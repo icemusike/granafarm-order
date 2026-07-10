@@ -33,6 +33,7 @@ let orders = [];
 let products = [];
 let invoices = [];
 let settings = {};
+let orderingConfig = { maps: { enabled: false } };
 let smsInfo = { provider: 'simulat', log: [] };
 let emailInfo = { provider: 'simulat', log: [] };
 let activeFilter = 'toate';
@@ -85,13 +86,14 @@ async function showDashboard() {
 }
 
 async function loadAll() {
-  const [ordRes, prodRes, invRes, setRes, smsRes, emailRes] = await Promise.all([
+  const [ordRes, prodRes, invRes, setRes, smsRes, emailRes, configRes] = await Promise.all([
     api('/api/admin/orders'),
     api('/api/admin/products'),
     api('/api/admin/invoices'),
     api('/api/admin/settings'),
     api('/api/admin/sms-log'),
     api('/api/admin/email-log'),
+    fetch('/api/ordering-config'),
   ]);
   if (!ordRes.ok) {
     // sesiune expirată / parolă schimbată
@@ -105,6 +107,7 @@ async function loadAll() {
   settings = await setRes.json();
   smsInfo = await smsRes.json();
   emailInfo = await emailRes.json();
+  orderingConfig = configRes.ok ? await configRes.json() : orderingConfig;
   renderNavBadge();
   renderFilter();
   renderOrders();
@@ -313,6 +316,7 @@ function renderOrders() {
           ${o.customer.cui ? `<div class="detail-line"><b>CUI:</b> ${esc(o.customer.cui)}</div>` : ''}
           ${o.customer.email ? `<div class="detail-line"><b>Email:</b> ${esc(o.customer.email)}</div>` : ''}
           <div class="detail-line"><b>Adresă:</b> ${esc(o.customer.address)}, ${esc(o.customer.city)}</div>
+          ${renderOrderMap(o)}
           ${o.customer.deliveryDate ? `<div class="detail-line"><b>Livrare dorită:</b> ${new Date(o.customer.deliveryDate + 'T00:00:00').toLocaleDateString('ro-RO', { dateStyle: 'long' })}</div>` : ''}
           ${o.customer.notes ? `<div class="detail-line"><b>Observații:</b> ${esc(o.customer.notes)}</div>` : ''}
           ${o.customer.marketingOptIn ? `<div class="detail-line">📣 Abonat la oferte prin email</div>` : ''}
@@ -333,6 +337,9 @@ function renderOrders() {
       if (expanded.has(o.id)) expanded.delete(o.id); else expanded.add(o.id);
       renderOrders();
     };
+
+    const mapElement = card.querySelector('[data-order-map]');
+    if (mapElement) void renderAdminMap(mapElement, o.delivery?.location);
 
     card.querySelector('[data-status]').onchange = async (e) => {
       const res = await api(`/api/admin/orders/${o.id}`, {
@@ -377,6 +384,44 @@ function renderOrders() {
     }
 
     el.appendChild(card);
+  }
+}
+
+function mapSearchUrl(order) {
+  const location = order.delivery?.location;
+  const query = location ? `${location.lat},${location.lng}` : `${order.customer.address}, ${order.customer.city}`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
+function renderOrderMap(order) {
+  const location = order.delivery?.location;
+  const link = mapSearchUrl(order);
+  if (!location) return `<div class="detail-line"><a href="${link}" target="_blank" rel="noopener">Vezi adresa pe hartă</a></div>`;
+  return `<div class="detail-line"><a href="${link}" target="_blank" rel="noopener">Deschide pinul în Google Maps</a></div><div class="admin-order-map" data-order-map></div>`;
+}
+
+function loadAdminGoogleMaps(apiKey) {
+  if (window.google?.maps) return Promise.resolve(window.google.maps);
+  if (window.__granaAdminMapsPromise) return window.__granaAdminMapsPromise;
+  window.__granaAdminMapsPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&language=ro&region=RO`;
+    script.async = true; script.onload = () => resolve(window.google.maps); script.onerror = reject;
+    document.head.appendChild(script);
+  });
+  return window.__granaAdminMapsPromise;
+}
+
+async function renderAdminMap(element, location) {
+  const mapsConfig = orderingConfig.maps || {};
+  if (!mapsConfig.enabled || !mapsConfig.apiKey) return;
+  try {
+    const maps = await loadAdminGoogleMaps(mapsConfig.apiKey);
+    const point = { lat: Number(location.lat), lng: Number(location.lng) };
+    const map = new maps.Map(element, { center: point, zoom: 16, gestureHandling: 'cooperative' });
+    new maps.Marker({ map, position: point });
+  } catch {
+    element.replaceWith(document.createTextNode('Harta nu a putut fi încărcată.'));
   }
 }
 
