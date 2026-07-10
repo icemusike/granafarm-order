@@ -223,8 +223,8 @@ async function notifyClientConfirmed(order) {
     const t = settings.emailTemplates || {};
     let attachments;
     let note;
-    // atașăm factura PDF dacă există și opțiunea e activă
-    if (t.attachInvoice && order.invoiceId) {
+    // atașăm factura PDF dacă există și ambele opțiuni sunt active
+    if (t.invoiceEmailEnabled !== false && t.attachInvoice && order.invoiceId) {
       const invoice = await storage.getInvoice(order.invoiceId);
       if (invoice) {
         attachments = [await invoiceAttachment(invoice)];
@@ -577,6 +577,9 @@ app.post('/api/admin/invoices/:id/email', requireAdmin, asyncRoute(async (req, r
   const invoice = await storage.getInvoice(req.params.id);
   if (!invoice) return res.status(404).json({ error: 'Factura nu a fost găsită.' });
   const settings = await storage.getSettings();
+  if ((settings.emailTemplates || {}).invoiceEmailEnabled === false) {
+    return res.status(403).json({ error: 'Trimiterea facturilor pe email este dezactivată. Activați-o din Configurare → Design și text email.' });
+  }
   const to = (req.body && req.body.to && String(req.body.to).trim()) || invoice.buyer.email;
   if (!to) return res.status(400).json({ error: 'Clientul nu are adresă de email. Introduceți una.' });
 

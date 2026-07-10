@@ -236,8 +236,16 @@
 
           <div class="switch-row">
             <div>
-              <div class="switch-label">Atașează factura PDF la emailul de confirmare</div>
-              <div class="switch-hint">Când confirmați o comandă care are deja factură emisă, PDF-ul se atașează automat clientului.</div>
+              <div class="switch-label">Trimite facturi pe email</div>
+              <div class="switch-hint">Comutator principal. Când e oprit, facturile NU se trimit pe email — nici automat la confirmare, nici manual din secțiunea Facturi (butonul „Email" dispare).</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="et-invoiceEmailEnabled"><span class="slider"></span></label>
+          </div>
+
+          <div class="switch-row">
+            <div>
+              <div class="switch-label">Atașează automat factura la emailul de confirmare</div>
+              <div class="switch-hint">Când confirmați o comandă care are deja factură emisă, PDF-ul se atașează automat clientului. (Necesită comutatorul de mai sus activ.)</div>
             </div>
             <label class="switch"><input type="checkbox" id="et-attachInvoice"><span class="slider"></span></label>
           </div>

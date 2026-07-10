@@ -71,6 +71,7 @@
       ownerSubject: 'Comandă nouă {number} — GranaFarm',
       ownerHeading: 'Comandă nouă primită',
       ownerBody: 'Ați primit o comandă nouă {number} de la {name}{company}.\n\nTotal: {total} lei · Livrare în {city}\nTelefon client: {phone}',
+      invoiceEmailEnabled: true,
       attachInvoice: true,
       footer: 'GranaFarm · legume proaspete direct din seră',
     },
@@ -408,6 +409,9 @@
     if (m && method === 'POST') {
       const invoice = db.invoices.find((i) => i.id === m[1]);
       if (!invoice) return [404, { error: 'Factura nu a fost găsită.' }];
+      if ((db.settings.emailTemplates || {}).invoiceEmailEnabled === false) {
+        return [403, { error: 'Trimiterea facturilor pe email este dezactivată. Activați-o din Configurare → Design și text email.' }];
+      }
       const to = (body && body.to && String(body.to).trim()) || invoice.buyer.email;
       if (!to) return [400, { error: 'Clientul nu are adresă de email. Introduceți una.' }];
       logEmail(to, `Factura ${invoice.number} — GranaFarm`, 'factura');

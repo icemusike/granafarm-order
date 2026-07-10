@@ -388,6 +388,7 @@ function renderInvoices() {
     el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Nu a fost emisă nicio factură încă.</div>';
     return;
   }
+  const invoiceEmailOn = (settings.emailTemplates || {}).invoiceEmailEnabled !== false;
   el.innerHTML = `
     <div class="table-wrap card" style="padding:0;">
       <table class="admin">
@@ -402,7 +403,7 @@ function renderInvoices() {
             <td style="white-space:nowrap;">
               <button class="btn-small save" data-inv="${inv.id}">Vezi</button>
               <button class="btn-small" data-inv-pdf="${inv.id}">📄 PDF</button>
-              <button class="btn-small" data-inv-email="${inv.id}">✉️ Email</button>
+              ${invoiceEmailOn ? `<button class="btn-small" data-inv-email="${inv.id}">✉️ Email</button>` : ''}
             </td>
           </tr>`).join('')}
         </tbody>
@@ -641,7 +642,11 @@ function renderSettings() {
   document.getElementById('tpl-clientConfirmed').value = tpl.clientConfirmed || '';
 
   const et = settings.emailTemplates || {};
+  const invoiceEmailOn = et.invoiceEmailEnabled !== false;
+  document.getElementById('et-invoiceEmailEnabled').checked = invoiceEmailOn;
   document.getElementById('et-attachInvoice').checked = et.attachInvoice !== false;
+  // sub-opțiunea are efect doar când comutatorul principal e activ
+  document.getElementById('et-attachInvoice').disabled = !invoiceEmailOn;
   EMAIL_TPL_FIELDS.forEach((k) => {
     const elx = document.getElementById('et-' + k);
     if (elx) elx.value = et[k] || '';
@@ -719,9 +724,13 @@ async function saveTemplates() {
 const EMAIL_TPL_FIELDS = ['clientSubject', 'clientHeading', 'clientBody', 'ownerSubject', 'ownerHeading', 'ownerBody', 'footer'];
 
 async function saveEmailTemplates() {
-  const et = { attachInvoice: document.getElementById('et-attachInvoice').checked };
+  const et = {
+    invoiceEmailEnabled: document.getElementById('et-invoiceEmailEnabled').checked,
+    attachInvoice: document.getElementById('et-attachInvoice').checked,
+  };
   EMAIL_TPL_FIELDS.forEach((k) => { et[k] = document.getElementById('et-' + k).value; });
   await saveSettingsPatch({ emailTemplates: et }, 'email-tpl-msg', 'Textele email au fost salvate.');
+  renderInvoices(); // butonul „Email" din Facturi se arată/ascunde după această setare
 }
 
 async function saveTwilio() {
@@ -892,6 +901,9 @@ document.getElementById('mk-enabled').onchange = saveMarketing;
 document.getElementById('export-marketing-btn').onclick = exportMarketing;
 document.getElementById('save-templates-btn').onclick = saveTemplates;
 document.getElementById('save-email-tpl-btn').onclick = saveEmailTemplates;
+document.getElementById('et-invoiceEmailEnabled').onchange = (e) => {
+  document.getElementById('et-attachInvoice').disabled = !e.target.checked;
+};
 document.getElementById('save-twilio-btn').onclick = saveTwilio;
 document.getElementById('test-sms-btn').onclick = sendTestSms;
 document.getElementById('add-product-btn').onclick = () => {
