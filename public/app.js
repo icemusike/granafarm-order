@@ -128,7 +128,7 @@ const VARIETY_IMAGES = [
   [/inima de bou/, '/images/products/inima_de_bou.png'],
   [/de gradina/, '/images/products/de_gradina.png'],
   [/roz rose/, '/images/products/Roz_rose.png'],
-  [/roz dov/, '/images/products/Roz_rose.png'],
+  [/roz dov/, '/images/products/roz_dov.png'],
   [/de buzau/, '/images/products/de_buzau.png'],
   [/crimeea/, '/images/products/negre_de_crimeea.png'],
   [/tolstoi/, '/images/products/tolstoi.png'],
