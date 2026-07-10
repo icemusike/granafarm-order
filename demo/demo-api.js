@@ -56,6 +56,33 @@
     vatRate: 11,
     invoiceSeries: 'GF',
     ownerPhone: '+40 728209980',
+    ownerEmail: '',
+    twilio: { accountSid: '', authToken: '', fromNumber: '' },
+    postmark: { enabled: false, apiToken: '', fromEmail: '', fromName: 'GranaFarm' },
+    marketing: { enabled: false },
+    smsTemplates: {
+      ownerNewOrder: 'GranaFarm: Comanda noua {number} de la {name}{company}, total {total} lei, livrare in {city}. Telefon client: {phone}',
+      clientConfirmed: 'GranaFarm: Comanda dvs. {number} in valoare de {total} lei a fost confirmata.{deliveryDate} Va multumim!',
+    },
+    emailTemplates: {
+      clientSubject: 'Comanda dvs. {number} a fost confirmată — GranaFarm',
+      clientHeading: 'Comanda dvs. a fost confirmată',
+      clientBody: 'Bună ziua, {name}!\n\nComanda dvs. {number} în valoare de {total} lei a fost confirmată.{deliveryDate}\n\nVă mulțumim că ați ales GranaFarm — legume proaspete direct din seră!',
+      ownerSubject: 'Comandă nouă {number} — GranaFarm',
+      ownerHeading: 'Comandă nouă primită',
+      ownerBody: 'Ați primit o comandă nouă {number} de la {name}{company}.\n\nTotal: {total} lei · Livrare în {city}\nTelefon client: {phone}',
+      attachInvoice: true,
+      footer: 'GranaFarm · legume proaspete direct din seră',
+    },
+  };
+
+  const SETTINGS_SCHEMA = {
+    companyName: 'string', cui: 'string', regCom: 'string', euid: 'string',
+    address: 'string', city: 'string', phone: 'string', email: 'string',
+    iban: 'string', bank: 'string', invoiceSeries: 'string',
+    ownerPhone: 'string', ownerEmail: 'string', vatRate: 'number',
+    twilio: 'object', postmark: 'object', marketing: 'object',
+    smsTemplates: 'object', emailTemplates: 'object',
   };
 
   const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
@@ -70,6 +97,7 @@
         db.invoices = db.invoices || [];
         db.nextInvoiceNumber = db.nextInvoiceNumber || 1;
         db.smsLog = db.smsLog || [];
+        db.emailLog = db.emailLog || [];
         return db;
       }
     } catch (e) { /* db corupt -> reînsămânțare */ }
@@ -81,6 +109,7 @@
       invoices: [],
       nextInvoiceNumber: 1,
       smsLog: [],
+      emailLog: [],
     };
   }
 
@@ -114,6 +143,47 @@
     });
     db.smsLog = db.smsLog.slice(0, 100);
     save();
+  }
+
+  function logEmail(to, subject, kind) {
+    db.emailLog.unshift({ id: uuid(), at: new Date().toISOString(), to, kind, subject, status: 'simulat' });
+    db.emailLog = db.emailLog.slice(0, 100);
+    save();
+  }
+
+  function renderTemplate(tpl, order) {
+    const company = order.customer.company ? ` (${order.customer.company})` : '';
+    const deliveryDate = order.customer.deliveryDate
+      ? ` Livrare estimată: ${order.customer.deliveryDate.split('-').reverse().join('.')}.` : '';
+    return String(tpl || '')
+      .replace(/\{number\}/g, order.number).replace(/\{name\}/g, order.customer.name)
+      .replace(/\{company\}/g, company).replace(/\{total\}/g, order.total.toFixed(2))
+      .replace(/\{city\}/g, order.customer.city).replace(/\{phone\}/g, order.customer.phone)
+      .replace(/\{deliveryDate\}/g, deliveryDate);
+  }
+
+  const DAY_MS = 86400000;
+  const startOfUTCDay = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  function computeRange(range, fromStr, toStr) {
+    const now = new Date();
+    const todayStart = startOfUTCDay(now);
+    const tomorrowStart = new Date(todayStart.getTime() + DAY_MS);
+    const dow = (now.getUTCDay() + 6) % 7;
+    switch (range) {
+      case 'today': return { start: todayStart, end: tomorrowStart };
+      case 'yesterday': return { start: new Date(todayStart - DAY_MS), end: todayStart };
+      case 'thisWeek': return { start: new Date(todayStart - dow * DAY_MS), end: tomorrowStart };
+      case 'lastWeek': { const ws = new Date(todayStart - dow * DAY_MS); return { start: new Date(ws - 7 * DAY_MS), end: ws }; }
+      case 'thisMonth': return { start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)), end: tomorrowStart };
+      case 'lastMonth': return { start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)), end: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)) };
+      case 'allTime': return { start: new Date(0), end: tomorrowStart };
+      case 'custom': {
+        const start = fromStr ? startOfUTCDay(new Date(fromStr + 'T00:00:00Z')) : new Date(0);
+        const endBase = toStr ? startOfUTCDay(new Date(toStr + 'T00:00:00Z')) : todayStart;
+        return { start, end: new Date(endBase.getTime() + DAY_MS) };
+      }
+      default: return { start: new Date(todayStart - 6 * DAY_MS), end: tomorrowStart };
+    }
   }
 
   function parseProduct(body) {
@@ -181,6 +251,7 @@
           city: String(customer.city).trim(),
           deliveryDate: String(customer.deliveryDate || '').trim(),
           notes: String(customer.notes || '').trim(),
+          marketingOptIn: Boolean(customer.marketingOptIn),
         },
         items: orderItems,
         total,
@@ -192,10 +263,10 @@
       db.orders.push(order);
       save();
       if (db.settings.ownerPhone) {
-        const company = order.customer.company ? ` (${order.customer.company})` : '';
-        logSms(db.settings.ownerPhone,
-          `GranaFarm: Comanda noua ${order.number} de la ${order.customer.name}${company}, total ${order.total.toFixed(2)} lei, livrare in ${order.customer.city}. Telefon client: ${order.customer.phone}`,
-          'comanda_noua');
+        logSms(db.settings.ownerPhone, renderTemplate(db.settings.smsTemplates.ownerNewOrder, order), 'comanda_noua');
+      }
+      if (db.settings.ownerEmail) {
+        logEmail(db.settings.ownerEmail, renderTemplate((db.settings.emailTemplates || {}).ownerSubject, order), 'comanda_noua');
       }
       return [201, { number: order.number, total: order.total }];
     }
@@ -221,12 +292,10 @@
       order.status = status;
       if (status === 'confirmata' && prev !== 'confirmata' && !order.confirmationSmsSent) {
         order.confirmationSmsSent = true;
-        const delivery = order.customer.deliveryDate
-          ? ` Livrare estimata: ${order.customer.deliveryDate.split('-').reverse().join('.')}.`
-          : '';
-        logSms(order.customer.phone,
-          `GranaFarm: Comanda dvs. ${order.number} in valoare de ${order.total.toFixed(2)} lei a fost confirmata.${delivery} Va multumim!`,
-          'confirmare');
+        logSms(order.customer.phone, renderTemplate(db.settings.smsTemplates.clientConfirmed, order), 'confirmare');
+        if (order.customer.email) {
+          logEmail(order.customer.email, renderTemplate((db.settings.emailTemplates || {}).clientSubject, order), 'confirmare');
+        }
       }
       save();
       return [200, order];
@@ -307,13 +376,18 @@
       return [200, { ok: true }];
     }
 
+    const settingsResponse = () => ({ ...db.settings, smsProvider: 'simulat', smsSource: 'none', emailProvider: 'simulat' });
+
     if (path === '/api/admin/settings' && method === 'GET') {
-      return [200, { ...db.settings, smsProvider: 'simulat' }];
+      return [200, settingsResponse()];
     }
     if (path === '/api/admin/settings' && method === 'PUT') {
       const next = { ...db.settings };
-      for (const key of Object.keys(DEFAULT_SETTINGS)) {
-        if (key in (body || {})) next[key] = key === 'vatRate' ? Number(body[key]) : String(body[key]).trim();
+      for (const [key, type] of Object.entries(SETTINGS_SCHEMA)) {
+        if (!(key in (body || {}))) continue;
+        if (type === 'number') next[key] = Number(body[key]);
+        else if (type === 'object') { if (body[key] && typeof body[key] === 'object') next[key] = { ...next[key], ...body[key] }; }
+        else next[key] = String(body[key]).trim();
       }
       if (!next.companyName) return [400, { error: 'Denumirea firmei este obligatorie.' }];
       if (!Number.isFinite(next.vatRate) || next.vatRate < 0 || next.vatRate > 50) {
@@ -322,15 +396,91 @@
       if (!next.invoiceSeries) return [400, { error: 'Seria facturilor este obligatorie.' }];
       db.settings = next;
       save();
-      return [200, { ...db.settings, smsProvider: 'simulat' }];
+      return [200, settingsResponse()];
     }
 
     if (path === '/api/admin/invoices' && method === 'GET') {
       return [200, [...db.invoices].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))];
     }
 
+    // Trimite factura pe email (simulat în demo)
+    m = path.match(/^\/api\/admin\/invoices\/([^/]+)\/email$/);
+    if (m && method === 'POST') {
+      const invoice = db.invoices.find((i) => i.id === m[1]);
+      if (!invoice) return [404, { error: 'Factura nu a fost găsită.' }];
+      const to = (body && body.to && String(body.to).trim()) || invoice.buyer.email;
+      if (!to) return [400, { error: 'Clientul nu are adresă de email. Introduceți una.' }];
+      logEmail(to, `Factura ${invoice.number} — GranaFarm`, 'factura');
+      return [200, { to, kind: 'factura', subject: `Factura ${invoice.number} — GranaFarm`, status: 'simulat' }];
+    }
+
+    // Descărcarea PDF nu e disponibilă în demo (generarea PDF necesită serverul)
+    m = path.match(/^\/api\/admin\/invoices\/([^/]+)\/pdf$/);
+    if (m && method === 'GET') {
+      return [501, { error: 'Descărcarea PDF a facturii este disponibilă doar în versiunea cu server (nu în demo).' }];
+    }
+
     if (path === '/api/admin/sms-log' && method === 'GET') {
       return [200, { provider: 'simulat', log: db.smsLog }];
+    }
+    if (path === '/api/admin/email-log' && method === 'GET') {
+      return [200, { provider: 'simulat', log: db.emailLog }];
+    }
+
+    if (path === '/api/admin/test-sms' && method === 'POST') {
+      const to = (body && body.to) || db.settings.ownerPhone;
+      if (!to) return [400, { error: 'Introduceți un număr de telefon pentru test.' }];
+      logSms(to, 'Acesta este un SMS de test trimis din panoul de administrare GranaFarm.', 'test');
+      return [200, { to: normalizePhone(to), kind: 'test', status: 'simulat' }];
+    }
+    if (path === '/api/admin/test-email' && method === 'POST') {
+      const to = (body && body.to) || db.settings.ownerEmail;
+      if (!to) return [400, { error: 'Introduceți o adresă de email pentru test.' }];
+      logEmail(to, 'Email de test — GranaFarm', 'test');
+      return [200, { to, kind: 'test', status: 'simulat' }];
+    }
+
+    if (path.startsWith('/api/admin/marketing-export') && method === 'GET') {
+      const seen = new Map();
+      for (const o of db.orders) {
+        if (o.customer.marketingOptIn && o.customer.email) {
+          const k = o.customer.email.toLowerCase();
+          if (!seen.has(k)) seen.set(k, { email: o.customer.email, name: o.customer.name, company: o.customer.company || '' });
+        }
+      }
+      const q = (s) => `"${String(s || '').replace(/"/g, '""')}"`;
+      const csv = ['Email,Nume,Firma', ...[...seen.values()].map((r) => [q(r.email), q(r.name), q(r.company)].join(','))].join('\r\n');
+      return [200, '﻿' + csv, 'text/csv'];
+    }
+
+    if (path.startsWith('/api/admin/stats') && method === 'GET') {
+      const qs = new URLSearchParams(path.split('?')[1] || '');
+      const range = qs.get('range') || 'last7';
+      const { start, end } = computeRange(range, qs.get('from'), qs.get('to'));
+      const now = new Date();
+      const todayStr = startOfUTCDay(now).toISOString().slice(0, 10);
+      const active = db.orders.filter((o) => o.status !== 'anulata');
+      const inRange = (o) => { const t = new Date(o.createdAt).getTime(); return t >= start.getTime() && t < end.getTime(); };
+      const rangeOrders = active.filter(inRange);
+      const totalOrders = rangeOrders.length;
+      const totalRevenue = round2(rangeOrders.reduce((s, o) => s + o.total, 0));
+      const ordersToday = active.filter((o) => o.createdAt.slice(0, 10) === todayStr).length;
+      const ordersDue = db.orders.filter((o) => ['noua', 'confirmata', 'in_livrare'].includes(o.status) && o.customer.deliveryDate && o.customer.deliveryDate <= todayStr).length;
+      const spanDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY_MS));
+      const cappedDays = Math.min(spanDays, 90);
+      const seriesStart = new Date(end.getTime() - cappedDays * DAY_MS);
+      const series = [];
+      for (let i = 0; i < cappedDays; i++) {
+        const ds = new Date(seriesStart.getTime() + i * DAY_MS);
+        const de = new Date(ds.getTime() + DAY_MS);
+        const dO = active.filter((o) => { const t = new Date(o.createdAt).getTime(); return t >= ds.getTime() && t < de.getTime(); });
+        series.push({ date: ds.toISOString().slice(0, 10), count: dO.length, revenue: round2(dO.reduce((s, o) => s + o.total, 0)) });
+      }
+      return [200, {
+        range, totalOrders, totalRevenue, ordersToday, ordersDue,
+        from: start.toISOString().slice(0, 10), to: new Date(end.getTime() - DAY_MS).toISOString().slice(0, 10),
+        seriesCapped: cappedDays < spanDays, series,
+      }];
     }
 
     return [404, { error: 'Rută necunoscută.' }];
@@ -353,7 +503,10 @@
       try { body = JSON.parse(opts.body); } catch (e) { body = null; }
     }
 
-    const [status, data] = handle(path, method, headers, body);
+    const [status, data, contentType] = handle(path, method, headers, body);
+    if (contentType) {
+      return new Response(data, { status, headers: { 'Content-Type': contentType } });
+    }
     return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   };
 
