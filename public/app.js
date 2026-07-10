@@ -121,9 +121,29 @@ function expectedDeliveryText(product) {
   return value || 'Livrare conform intervalului ales';
 }
 
+// Fotografii reale per soi de roșii — trebuie ținute în sincron cu
+// VARIETY_IMAGES din lib/seed.js.
+const VARIETY_IMAGES = [
+  [/inima de albagena/, '/images/products/inima_de_albagena.png'],
+  [/inima de bou/, '/images/products/inima_de_bou.png'],
+  [/de gradina/, '/images/products/de_gradina.png'],
+  [/roz rose/, '/images/products/Roz_rose.png'],
+  [/roz dov/, '/images/products/Roz_rose.png'],
+  [/de buzau/, '/images/products/de_buzau.png'],
+  [/crimeea/, '/images/products/negre_de_crimeea.png'],
+  [/tolstoi/, '/images/products/tolstoi.png'],
+  [/\broma\b/, '/images/products/roma.png'],
+  [/cherry/, '/images/products/cherry.png'],
+];
+
 function categoryImage(product) {
   const haystack = normalizeText(`${product.category || ''} ${product.name || ''}`);
-  if (/rosii|tomate/.test(haystack)) return '/images/products/tomatoes.webp';
+  if (/rosii|tomate/.test(haystack)) {
+    const nameOnly = normalizeText(product.name || '');
+    const variety = VARIETY_IMAGES.find(([re]) => re.test(nameOnly));
+    if (variety) return variety[1];
+    return '/images/products/tomatoes.webp';
+  }
   if (/dulceata|gem|magiun/.test(haystack)) return '/images/products/jams.webp';
   if (/muratur|castraveti murati|gogosari/.test(haystack)) return '/images/products/pickles.webp';
   if (/conserv|bulion|zacusc|sos|sirop/.test(haystack)) return '/images/products/preserves.webp';
