@@ -1716,3 +1716,54 @@ img.image-unavailable { background: linear-gradient(135deg, #e3eee5, #f8eee0); }
   .customer-page .product .qty-row button { width: 31px; }
   .category-chip { padding-right: 11px; padding-left: 11px; }
 }
+
+/* ------------------------------------------------ fișă de cules (admin) --- */
+
+.harvest-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  margin: 14px 0 16px;
+  border-left: 4px solid var(--green);
+}
+.harvest-info { display: flex; flex-direction: column; gap: 2px; min-width: 220px; }
+.harvest-info b { color: var(--charcoal); }
+.harvest-info span { font-size: 0.83rem; color: var(--muted); }
+.harvest-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.harvest-controls input[type="date"] {
+  padding: 9px 12px;
+  border: 2px solid rgba(76, 175, 80, 0.35);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  background: var(--white);
+}
+.harvest-controls input[type="date"]:focus { outline: none; border-color: var(--gold); box-shadow: var(--focus-ring); }
+.harvest-check { display: flex; align-items: center; gap: 7px; font-size: 0.85rem; color: var(--charcoal-soft); cursor: pointer; white-space: nowrap; }
+.harvest-check input { width: 16px; height: 16px; accent-color: var(--green); }
+
+/* ------------------------------------------------ editare comandă (admin) --- */
+
+.order-edit h4 { margin-top: 0; }
+.order-edit .form-grid { gap: 14px; }
+.order-edit .field input, .order-edit .field textarea { padding: 9px 12px; font-size: 0.93rem; }
+.order-edit table.edit-items { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.order-edit table.edit-items td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.order-edit table.edit-items input[type="number"] {
+  padding: 7px 9px;
+  border: 2px solid rgba(76, 175, 80, 0.35);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.order-edit table.edit-items input[type="number"]:focus { outline: none; border-color: var(--gold); box-shadow: var(--focus-ring); }
+.order-edit .actions { display: flex; gap: 10px; }
+
+@media (max-width: 640px) {
+  .harvest-bar { flex-direction: column; align-items: stretch; }
+  .order-edit .form-grid { grid-template-columns: 1fr; }
+}

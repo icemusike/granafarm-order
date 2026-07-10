@@ -46,6 +46,19 @@
       <section class="admin-section" id="section-comenzi">
         <h2>📋 Comenzi</h2>
         <div class="toolbar" id="status-filter"></div>
+
+        <div class="card harvest-bar">
+          <div class="harvest-info">
+            <b>🌱 Fișă de cules</b>
+            <span>Totalul cantităților de pregătit pentru o zi de livrare — de printat pentru angajați.</span>
+          </div>
+          <div class="harvest-controls">
+            <input type="date" id="harvest-date">
+            <label class="harvest-check"><input type="checkbox" id="harvest-include-new" checked> include comenzile noi (neconfirmate)</label>
+            <button class="btn-small save" id="harvest-btn">🖨️ Generează fișa</button>
+          </div>
+        </div>
+
         <div id="orders"></div>
       </section>
 

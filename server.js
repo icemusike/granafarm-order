@@ -767,12 +767,103 @@ app.get('/api/admin/orders', requireAdmin, asyncRoute(async (req, res) => {
 }));
 
 app.patch('/api/admin/orders/:id', requireAdmin, asyncRoute(async (req, res) => {
-  const { status } = req.body || {};
-  if (!ORDER_STATUSES.includes(status)) return res.status(400).json({ error: 'Status invalid.' });
-  const result = await storage.setOrderStatus(req.params.id, status);
-  if (!result) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
-  if (result.shouldSendConfirmation) fireAndForget(notifyClientConfirmed(result.order));
-  res.json(result.order);
+  const body = req.body || {};
+  const { status } = body;
+  if (status !== undefined && !ORDER_STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'Status invalid.' });
+  }
+
+  const existing = await storage.getOrder(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
+
+  const patch = {};
+
+  // Editarea datelor de client (parțial): validăm câmpurile primite și le
+  // îmbinăm peste cele existente. Tipul clientului și opțiunile rămân.
+  if (body.customer !== undefined) {
+    if (!body.customer || typeof body.customer !== 'object' || Array.isArray(body.customer)) {
+      return res.status(400).json({ error: 'Datele clientului nu sunt valide.' });
+    }
+    const rules = {
+      name: { max: 100, required: true },
+      company: { max: 160 },
+      cui: { max: 32 },
+      phone: { max: 32, required: true },
+      email: { max: 254 },
+      address: { max: 250, required: true },
+      city: { max: 100, required: true },
+      notes: { max: 1000 },
+    };
+    const nextCustomer = { ...existing.customer };
+    for (const [field, rule] of Object.entries(rules)) {
+      if (!(field in body.customer)) continue;
+      const parsed = getTrimmedString(body.customer, field, rule.max, rule.required);
+      if (parsed.error) return res.status(400).json({ error: `${field}: ${parsed.error}` });
+      nextCustomer[field] = parsed.value;
+    }
+    if (!isValidPhone(nextCustomer.phone)) {
+      return res.status(400).json({ error: 'Introduceți un număr de telefon valid.' });
+    }
+    if (!isValidEmail(nextCustomer.email)) {
+      return res.status(400).json({ error: 'Introduceți o adresă de email validă.' });
+    }
+    patch.customer = nextCustomer;
+  }
+
+  // Schimbarea datei de livrare (gol = fără dată). Data se ține în ambele
+  // locuri: customer.deliveryDate (istoric) și delivery.date.
+  if (body.deliveryDate !== undefined) {
+    const value = String(body.deliveryDate || '').trim();
+    if (value && !parseIsoDate(value)) {
+      return res.status(400).json({ error: 'Data livrării nu este validă (format AAAA-LL-ZZ).' });
+    }
+    patch.customer = { ...(patch.customer || existing.customer), deliveryDate: value };
+    patch.delivery = { ...existing.delivery, date: value };
+  }
+
+  // Editarea cantităților: un element per articol existent (aceeași ordine);
+  // cantitatea 0 elimină articolul. Totalurile se recalculează.
+  if (body.items !== undefined) {
+    if (!Array.isArray(body.items) || body.items.length !== existing.items.length) {
+      return res.status(400).json({ error: 'Lista de cantități nu corespunde comenzii.' });
+    }
+    const nextItems = [];
+    for (let i = 0; i < existing.items.length; i += 1) {
+      const qty = round2(Number(body.items[i] && body.items[i].qty));
+      if (!Number.isFinite(qty) || qty < 0) {
+        return res.status(400).json({ error: `Cantitate invalidă pentru „${existing.items[i].name}".` });
+      }
+      if (qty > 0) nextItems.push({ ...existing.items[i], qty });
+    }
+    if (nextItems.length === 0) {
+      return res.status(400).json({ error: 'Comanda trebuie să păstreze cel puțin un produs.' });
+    }
+    const subtotal = round2(nextItems.reduce((sum, item) => sum + item.price * item.qty, 0));
+    patch.items = nextItems;
+    patch.subtotal = subtotal;
+    patch.total = round2(subtotal + (existing.deliveryFee || 0));
+  }
+
+  let order = existing;
+  if (Object.keys(patch).length > 0) {
+    order = await storage.updateOrder(req.params.id, patch);
+    if (!order) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
+  }
+
+  if (status !== undefined && status !== order.status) {
+    const result = await storage.setOrderStatus(req.params.id, status);
+    if (!result) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
+    if (result.shouldSendConfirmation) fireAndForget(notifyClientConfirmed(result.order));
+    order = result.order;
+  }
+  res.json(order);
+}));
+
+app.delete('/api/admin/orders/:id', requireAdmin, asyncRoute(async (req, res) => {
+  // Șterge definitiv comanda și facturile emise pentru ea (comenzi de test).
+  const ok = await storage.deleteOrder(req.params.id);
+  if (!ok) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
+  res.json({ ok: true });
 }));
 
 app.get('/api/admin/products', requireAdmin, asyncRoute(async (req, res) => {
