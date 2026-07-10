@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Livrare — GranaFarm</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <style>
+    :root {
+      --green: #4CAF50; --green-dark: #388E3C; --gold: #FFA726; --charcoal: #22302A;
+      --muted: #6b7d74; --line: #e4eae7; --bg: #F5F7F6; --sky: #1a73e8;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Segoe UI', Arial, system-ui, sans-serif; background: var(--bg); color: var(--charcoal); line-height: 1.5; }
+    .wrap { max-width: 460px; margin: 0 auto; padding: 16px 16px 48px; }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 6px 0 14px; }
+    .brand img { height: 34px; }
+    .brand span { font-size: 0.8rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 2px 8px rgba(34,48,42,0.08); padding: 18px; margin-bottom: 14px; }
+    h1 { font-size: 1.25rem; margin: 0 0 2px; }
+    .status { display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 12px; border-radius: 999px; background: #FFF3E0; color: #E65100; margin-top: 6px; }
+    .who { font-size: 1.05rem; font-weight: 700; margin-top: 10px; }
+    .co { color: var(--muted); font-size: 0.92rem; }
+    .addr { font-size: 1.02rem; margin-top: 8px; }
+    .meta { color: var(--muted); font-size: 0.88rem; margin-top: 6px; }
+    .btn {
+      display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
+      border: none; border-radius: 14px; padding: 16px; font-size: 1.05rem; font-weight: 700;
+      text-decoration: none; cursor: pointer; margin-top: 12px; font-family: inherit;
+    }
+    .btn-nav { background: var(--sky); color: #fff; box-shadow: 0 4px 14px rgba(26,115,232,0.35); }
+    .btn-call { background: #fff; color: var(--green-dark); border: 2px solid var(--green); }
+    h2 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 0 0 10px; }
+    .item { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 0.98rem; }
+    .item:last-of-type { border-bottom: none; }
+    .item b { white-space: nowrap; }
+    .total { display: flex; justify-content: space-between; font-weight: 800; font-size: 1.05rem; border-top: 2px solid var(--gold); padding-top: 10px; margin-top: 4px; }
+    .notes { background: #FFF8E1; border: 1px solid #FFE082; border-radius: 12px; padding: 12px 14px; font-size: 0.95rem; margin-top: 12px; }
+    .err { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand"><img src="/logo.png" alt="GranaFarm"><span>Livrare</span></div>
+
+    <div class="err hidden" id="err">Comanda nu a fost găsită sau linkul nu mai este valabil.</div>
+
+    <div id="content" class="hidden">
+      <div class="card">
+        <h1 id="d-number"></h1>
+        <span class="status" id="d-status"></span>
+        <div class="who" id="d-name"></div>
+        <div class="co" id="d-company"></div>
+        <div class="addr">📍 <span id="d-address"></span></div>
+        <div class="meta" id="d-meta"></div>
+        <a class="btn btn-nav" id="d-directions" target="_blank" rel="noopener">🧭 Pornește navigația (Get Directions)</a>
+        <a class="btn btn-call" id="d-call">📞 Sună clientul</a>
+      </div>
+
+      <div class="card">
+        <h2>Conținutul pachetului</h2>
+        <div id="d-items"></div>
+        <div class="total"><span>Total de plată</span><span id="d-total"></span></div>
+        <div class="notes hidden" id="d-notes"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (async () => {
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+      const lei = (v) => Number(v).toFixed(2).replace('.', ',') + ' lei';
+      const token = location.pathname.split('/').pop();
+      const STATUS = { noua: 'Nouă', confirmata: 'Confirmată', in_livrare: 'În livrare', livrata: 'Livrată', anulata: 'ANULATĂ' };
+      try {
+        const res = await fetch('/api/orders/delivery/' + encodeURIComponent(token));
+        if (!res.ok) throw new Error();
+        const o = await res.json();
+        $('d-number').textContent = 'Comanda ' + o.number;
+        $('d-status').textContent = STATUS[o.status] || o.status;
+        $('d-name').textContent = o.name;
+        $('d-company').textContent = o.company || '';
+        $('d-address').textContent = o.address + ', ' + o.city;
+        const parts = [];
+        if (o.deliveryDate) parts.push('Livrare: ' + o.deliveryDate.split('-').reverse().join('.'));
+        if (o.deliveryWindow) parts.push(o.deliveryWindow);
+        $('d-meta').textContent = parts.join(' · ');
+        // navigație: pinul exact dacă există, altfel adresa
+        const dest = o.location && Number.isFinite(Number(o.location.lat))
+          ? o.location.lat + ',' + o.location.lng
+          : o.address + ', ' + o.city + ', România';
+        $('d-directions').href = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(dest);
+        $('d-call').href = 'tel:' + o.phone.replace(/\s/g, '');
+        $('d-call').textContent = '📞 Sună clientul — ' + o.phone;
+        $('d-items').innerHTML = o.items.map((i) =>
+          '<div class="item"><span>' + esc(i.name) + '</span><b>' + (i.qty % 1 === 0 ? i.qty : String(i.qty).replace('.', ',')) + ' ' + esc(i.unit) + '</b></div>'
+        ).join('');
+        $('d-total').textContent = lei(o.total);
+        if (o.notes) { $('d-notes').textContent = '📝 ' + o.notes; $('d-notes').classList.remove('hidden'); }
+        $('content').classList.remove('hidden');
+      } catch {
+        $('err').classList.remove('hidden');
+      }
+    })();
+  </script>
+</body>
+</html>

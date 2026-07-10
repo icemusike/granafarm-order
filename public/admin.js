@@ -311,6 +311,7 @@ function orderBodyHtml(o) {
             ${Object.entries(STATUS_LABELS).map(([v, l]) => `<option value="${v}" ${o.status === v ? 'selected' : ''}>${l}</option>`).join('')}
           </select>
           <span style="flex:1"></span>
+          <button class="btn-small save" data-print-label>🏷️ Etichetă livrare</button>
           <button class="btn-small" data-edit-order>✏️ Editează</button>
           <button class="btn-small danger" data-delete-order>🗑️ Șterge</button>
           ${o.invoiceNumber
@@ -429,6 +430,17 @@ function renderOrders() {
         // confirmarea poate genera un SMS/email către client
         api('/api/admin/sms-log').then((r) => r.json()).then((d) => { smsInfo = d; renderSmsLog(); });
         api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
+      }
+    };
+
+    const labelBtn = card.querySelector('[data-print-label]');
+    if (labelBtn) labelBtn.onclick = async (e) => {
+      e.stopPropagation();
+      labelBtn.disabled = true;
+      try {
+        await printDeliveryLabel(o);
+      } finally {
+        labelBtn.disabled = false;
       }
     };
 
@@ -678,6 +690,84 @@ function buildHarvestSheet() {
     ${aggregateTable}
     <h2 style="margin-top:26px;">${bi('Detaliu pe comandă (pentru împachetare)', 'अर्डर अनुसार विवरण (प्याक गर्न)')}</h2>
     ${perOrder}`);
+}
+
+// --- eticheta de livrare (print on demand, cu cod QR pentru șofer) --------
+
+async function printDeliveryLabel(o) {
+  // token + cod QR de la server (token-ul e stabil per comandă)
+  let qr = '';
+  try {
+    const res = await api(`/api/admin/orders/${o.id}/delivery-label`, { method: 'POST' });
+    if (res.ok) qr = (await res.json()).qr;
+  } catch { /* eticheta se poate printa și fără QR */ }
+
+  const fmtQty = (q) => (q % 1 === 0 ? String(q) : String(q).replace('.', ','));
+  const deliveryDate = orderDeliveryDate(o);
+  const dateLabel = deliveryDate
+    ? new Date(deliveryDate + 'T00:00:00').toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })
+    : '';
+
+  const itemsRows = o.items.map((i) =>
+    `<tr><td>${esc(i.name)}</td><td class="num"><b>${fmtQty(i.qty)} ${esc(i.unit)}</b></td></tr>`
+  ).join('');
+
+  const win = window.open('', '_blank');
+  if (!win) { alert('Permiteți ferestrele pop-up pentru a printa eticheta.'); return; }
+  win.document.write(`<!DOCTYPE html><html lang="ro"><head><meta charset="UTF-8"><title>Etichetă livrare ${esc(o.number)}</title>
+    <style>
+      body { font-family: 'Segoe UI', Arial, system-ui, sans-serif; color: #22302A; margin: 64px auto 24px; max-width: 560px; padding: 0 16px; }
+      .label { border: 3px solid #22302A; border-radius: 14px; overflow: hidden; }
+      @media print { body { margin: 0 auto; } }
+      .label-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #22302A; color: #fff; padding: 10px 16px; }
+      .label-head img { height: 30px; background: #fff; border-radius: 6px; padding: 3px 8px; }
+      .label-head .no { font-size: 1.35rem; font-weight: 800; letter-spacing: 0.02em; }
+      .label-main { display: flex; gap: 14px; padding: 14px 16px; align-items: flex-start; }
+      .label-info { flex: 1; min-width: 0; }
+      .to { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7d74; margin-bottom: 2px; }
+      .who { font-size: 1.18rem; font-weight: 800; line-height: 1.25; }
+      .co { font-size: 0.95rem; color: #4a5a52; font-weight: 600; }
+      .addr { font-size: 1.05rem; font-weight: 700; margin-top: 8px; line-height: 1.35; }
+      .phone { font-size: 1.1rem; font-weight: 800; margin-top: 8px; }
+      .meta { font-size: 0.9rem; color: #4a5a52; margin-top: 6px; }
+      .qr { flex: none; text-align: center; width: 150px; }
+      .qr img { width: 150px; height: 150px; display: block; border: 1px solid #e4eae7; border-radius: 8px; }
+      .qr .hint { font-size: 0.62rem; color: #6b7d74; margin-top: 4px; line-height: 1.35; }
+      .label-items { border-top: 2px dashed #22302A; padding: 10px 16px 12px; }
+      .label-items h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.09em; color: #6b7d74; margin: 0 0 6px; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+      td { padding: 5px 4px; border-bottom: 1px solid #e4eae7; }
+      tr:last-child td { border-bottom: none; }
+      .num { text-align: right; white-space: nowrap; }
+      .notes { background: #FFF8E1; border-top: 2px dashed #22302A; padding: 10px 16px; font-size: 0.92rem; }
+      .print-btn { position: fixed; top: 14px; right: 14px; background: #388E3C; color: #fff; border: none; border-radius: 10px; padding: 12px 22px; font-size: 0.92rem; font-weight: 700; cursor: pointer; }
+      @media print { .print-btn { display: none; } body { margin: 0 auto; } }
+    </style></head><body>
+    <button class="print-btn" onclick="window.print()">🖨️ Printează</button>
+    <div class="label">
+      <div class="label-head">
+        <img src="/logo.png" alt="GranaFarm">
+        <span class="no">${esc(o.number)}</span>
+      </div>
+      <div class="label-main">
+        <div class="label-info">
+          <div class="to">Destinatar</div>
+          <div class="who">${esc(o.customer.name)}</div>
+          ${o.customer.company ? `<div class="co">${esc(o.customer.company)}</div>` : ''}
+          <div class="addr">📍 ${esc(o.customer.address)}, ${esc(o.customer.city)}</div>
+          <div class="phone">📞 ${esc(o.customer.phone)}</div>
+          <div class="meta">${dateLabel ? `Livrare: <b>${esc(dateLabel)}</b>` : ''}${o.delivery?.windowLabel ? ` · ${esc(o.delivery.windowLabel)}` : ''}</div>
+        </div>
+        ${qr ? `<div class="qr"><img src="${qr}" alt="Cod QR livrare"><div class="hint">Scanează cu telefonul: detalii pachet + navigație către adresă</div></div>` : ''}
+      </div>
+      <div class="label-items">
+        <h3>Conținut pachet — ${o.items.length} ${o.items.length === 1 ? 'produs' : 'produse'}</h3>
+        <table><tbody>${itemsRows}</tbody></table>
+      </div>
+      ${o.customer.notes ? `<div class="notes">📝 ${esc(o.customer.notes)}</div>` : ''}
+    </div>
+    </body></html>`);
+  win.document.close();
 }
 
 // Fereastră de printare simplă, cu stil curat pentru hârtie.
