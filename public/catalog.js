@@ -7,7 +7,7 @@ const VARIETIES = [
     lead: 'Roșia copilăriei: fruct mare, ușor turtit, cu pulpă suculentă și parfum intens de grădină. Soiul care dă gustul autentic, „de altădată”, imposibil de găsit în comerțul de masă.',
     taste: 'Dulce-acrișor echilibrat, aromă intensă', texture: 'Pulpă suculentă, zemoasă, coajă fină',
     tags: ['Salate', 'Roșii umplute', 'Platouri cu felii'] },
-  { name: 'Roz Dov', origin: 'Soi bulgăresc', size: 'Calibru mare', img: '/images/products/Roz_rose.png',
+  { name: 'Roz Dov', origin: 'Soi bulgăresc', size: 'Calibru mare', img: '/images/products/roz_dov.png',
     lead: 'Roșie roz de tradiție bulgărească, cu fruct mare în formă de inimă. Pulpa densă și dulceața pronunțată, cu foarte puțină aciditate, o fac una dintre cele mai apreciate roșii de masă.',
     taste: 'Dulce, blând, aciditate foarte scăzută', texture: 'Pulpă densă, cărnoasă, coajă subțire',
     tags: ['Felii generoase', 'Salate', 'Sandvișuri'] },
