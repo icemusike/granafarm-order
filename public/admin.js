@@ -1061,6 +1061,7 @@ function renderSettings() {
   document.getElementById('tpl-clientConfirmed').value = tpl.clientConfirmed || '';
 
   const tw = settings.twilio || {};
+  document.getElementById('tw-enabled').checked = tw.enabled === true;
   document.getElementById('tw-accountSid').value = tw.accountSid || '';
   document.getElementById('tw-authToken').value = tw.authToken || '';
   document.getElementById('tw-fromNumber').value = tw.fromNumber || '';
@@ -1070,7 +1071,14 @@ function renderSettings() {
       ? (settings.smsSource === 'settings'
         ? 'SMS-urile sunt <b>active</b>, folosind datele Twilio completate mai jos.'
         : 'SMS-urile sunt <b>active</b>, folosind variabilele de mediu Twilio setate pe host.')
-      : 'SMS-urile rulează în <b>mod simulat</b> — completați datele Twilio mai jos pentru trimitere reală.';
+      : (tw.enabled === true
+        ? 'Comutatorul este pornit, dar SMS-urile rulează în <b>mod simulat</b> — completați datele Twilio pentru trimitere reală.'
+        : 'SMS-urile sunt <b>dezactivate</b> (mod simulat, doar în jurnal). Porniți comutatorul de mai jos după aprobarea numărului de expeditor.');
+
+  document.getElementById('gm-apiKey').value = (settings.maps || {}).apiKey || '';
+  setStatusPill('maps-status', Boolean(orderingConfig.maps && orderingConfig.maps.enabled));
+
+  document.getElementById('s-notificationEmails').value = settings.notificationEmails || '';
 
   // Precompletăm destinatarii testelor cu datele proprietarului (doar dacă sunt goi,
   // ca să nu suprascriem ce a scris utilizatorul).
@@ -1132,12 +1140,32 @@ async function saveTemplates() {
 async function saveTwilio() {
   const payload = {
     twilio: {
+      enabled: document.getElementById('tw-enabled').checked,
       accountSid: document.getElementById('tw-accountSid').value.trim(),
       authToken: document.getElementById('tw-authToken').value.trim(),
       fromNumber: document.getElementById('tw-fromNumber').value.trim(),
     },
   };
   await saveSettingsPatch(payload, 'twilio-msg', 'Configurarea Twilio a fost salvată.');
+}
+
+async function saveMaps() {
+  await saveSettingsPatch(
+    { maps: { apiKey: document.getElementById('gm-apiKey').value.trim() } },
+    'maps-msg', 'Cheia Google Maps a fost salvată.'
+  );
+  // pastila de status depinde de configurația publică — o reîmprospătăm
+  try {
+    const res = await fetch('/api/ordering-config', { cache: 'no-store' });
+    if (res.ok) { orderingConfig = await res.json(); renderSettings(); }
+  } catch { /* pastila se actualizează la următoarea încărcare */ }
+}
+
+async function saveNotificationEmails() {
+  await saveSettingsPatch(
+    { notificationEmails: document.getElementById('s-notificationEmails').value.trim() },
+    'marketing-msg', 'Adresele de notificare au fost salvate.'
+  );
 }
 
 async function sendTestSms() {
@@ -1298,6 +1326,8 @@ document.getElementById('mk-enabled').onchange = saveMarketing;
 document.getElementById('export-marketing-btn').onclick = exportMarketing;
 document.getElementById('save-templates-btn').onclick = saveTemplates;
 document.getElementById('save-twilio-btn').onclick = saveTwilio;
+document.getElementById('save-maps-btn').onclick = saveMaps;
+document.getElementById('save-notification-emails-btn').onclick = saveNotificationEmails;
 document.getElementById('test-sms-btn').onclick = sendTestSms;
 document.getElementById('add-product-btn').onclick = () => {
   document.getElementById('products-body').appendChild(

@@ -175,7 +175,10 @@
               </div>
               <div class="field full">
                 <label for="c-location">Pin exact pentru livrare</label>
-                <p id="delivery-map-hint" class="field-help">Alege pe hartă punctul exact unde trebuie lăsată comanda.</p>
+                <p id="delivery-map-hint" class="field-help">Caută adresa sau alege pe hartă punctul exact unde trebuie lăsată comanda.</p>
+                <div class="map-search-wrap hidden">
+                  <input id="map-search" type="text" autocomplete="off" placeholder="🔍 Caută adresa — ex: Str. Florilor 10, Timișoara">
+                </div>
                 <button class="btn btn-secondary" type="button" id="open-delivery-map-btn">Alege pinul pe hartă</button>
                 <div id="delivery-map-wrap" class="delivery-map-wrap hidden">
                   <div id="delivery-map" class="delivery-map" aria-label="Hartă pentru punctul de livrare"></div>
