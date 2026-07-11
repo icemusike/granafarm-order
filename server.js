@@ -21,7 +21,14 @@ const path = require('path');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const { createStorage } = require('./lib/storage');
-const { buildEFacturaXml, uploadToSpv } = require('./lib/efactura');
+const {
+  buildEFacturaXml,
+  uploadToSpv,
+  buildAuthorizeUrl,
+  exchangeCodeForTokens,
+  refreshAccessToken,
+  testSpvConnection,
+} = require('./lib/efactura');
 const {
   DEFAULT_SETTINGS,
   SETTINGS_SCHEMA,
@@ -1342,6 +1349,132 @@ app.post('/api/admin/orders/:id/invoice', requireAdmin, asyncRoute(async (req, r
 
 // --- e-Factura (ANAF SPV), integrare pregătită dar NEACTIVATĂ implicit ------
 
+// Stările OAuth în curs (protecție CSRF pe callback): state -> momentul
+// creării. O intrare e valabilă 15 minute și se consumă la prima folosire.
+const efacturaOAuthStates = new Map();
+const EFACTURA_STATE_TTL_MS = 15 * 60 * 1000;
+
+function pruneEfacturaStates() {
+  const now = Date.now();
+  for (const [state, createdAt] of efacturaOAuthStates) {
+    if (now - createdAt > EFACTURA_STATE_TTL_MS) efacturaOAuthStates.delete(state);
+  }
+}
+
+// Callback-ul efectiv: setarea explicită din panou are prioritate (trebuie
+// să fie identică cu cea înregistrată la ANAF); altfel se construiește din
+// adresa publică a aplicației.
+function efacturaRedirectUri(req, ef) {
+  const explicit = String((ef && ef.redirectUri) || '').trim();
+  return explicit || buildNotificationTrackingUrl(req, '/api/admin/efactura/callback');
+}
+
+// Reîmprospătează automat token-ul de acces (cu 24h înainte de expirare),
+// folosind refresh token-ul, fără intervenția adminului. Dacă refresh-ul nu
+// e posibil, se continuă cu token-ul curent.
+async function ensureFreshEfacturaToken() {
+  const settings = await storage.getSettings();
+  const ef = settings.efactura || {};
+  if (!ef.accessToken) return { settings, ef };
+  const expiresAt = ef.tokenExpiresAt ? Date.parse(ef.tokenExpiresAt) : 0;
+  const needsRefresh = Number.isFinite(expiresAt) && expiresAt > 0
+    && expiresAt - Date.now() < 24 * 3600 * 1000;
+  if (!needsRefresh || !ef.refreshToken || !ef.clientId || !ef.clientSecret) return { settings, ef };
+  const result = await refreshAccessToken({
+    refreshToken: ef.refreshToken,
+    clientId: ef.clientId,
+    clientSecret: ef.clientSecret,
+  });
+  if (!result.ok) {
+    console.warn('e-Factura: reîmprospătarea token-ului a eșuat:', result.error);
+    return { settings, ef };
+  }
+  const nextEf = {
+    ...ef,
+    accessToken: result.accessToken,
+    refreshToken: result.refreshToken || ef.refreshToken,
+    tokenExpiresAt: new Date(Date.now() + (result.expiresIn ? result.expiresIn * 1000 : 90 * 86400000)).toISOString(),
+    tokenObtainedAt: new Date().toISOString(),
+  };
+  const nextSettings = await storage.saveSettings({ ...settings, efactura: nextEf });
+  console.log('e-Factura: token-ul de acces a fost reîmprospătat automat.');
+  return { settings: nextSettings, ef: nextEf };
+}
+
+// Pasul 1 al autorizării: panoul cere URL-ul ANAF către care să trimită
+// browserul adminului (cu certificatul digital).
+app.post('/api/admin/efactura/authorize-url', requireAdmin, asyncRoute(async (req, res) => {
+  const settings = await storage.getSettings();
+  const ef = settings.efactura || {};
+  if (!ef.clientId || !ef.clientSecret) {
+    return res.status(400).json({ error: 'Completați și salvați mai întâi Client ID și Client Secret (din portalul ANAF).' });
+  }
+  pruneEfacturaStates();
+  const state = crypto.randomBytes(24).toString('base64url');
+  efacturaOAuthStates.set(state, Date.now());
+  const redirectUri = efacturaRedirectUri(req, ef);
+  res.json({ url: buildAuthorizeUrl({ clientId: ef.clientId, redirectUri, state }), redirectUri });
+}));
+
+// Pasul 2: ANAF redirecționează aici cu ?code=...&state=... după semnarea
+// cu certificatul. Ruta e publică (redirect de browser), protejată prin
+// state-ul de unică folosință; schimbăm codul pe token și îl salvăm.
+app.get('/api/admin/efactura/callback', asyncRoute(async (req, res) => {
+  const fail = (reason) => res.redirect('/admin?efactura=eroare&motiv=' + encodeURIComponent(String(reason).slice(0, 200)) + '#integrari');
+  const { code, state, error } = req.query || {};
+  if (error) return fail(error);
+  if (!code) return fail('ANAF nu a trimis codul de autorizare');
+  pruneEfacturaStates();
+  const createdAt = efacturaOAuthStates.get(String(state || ''));
+  if (!createdAt) return fail('sesiunea de autorizare a expirat sau nu a fost inițiată din panou; reîncercați');
+  efacturaOAuthStates.delete(String(state));
+
+  const settings = await storage.getSettings();
+  const ef = settings.efactura || {};
+  const result = await exchangeCodeForTokens({
+    code: String(code),
+    clientId: ef.clientId,
+    clientSecret: ef.clientSecret,
+    redirectUri: efacturaRedirectUri(req, ef),
+  });
+  if (!result.ok) return fail('schimbul codului pe token a eșuat: ' + result.error);
+
+  await storage.saveSettings({
+    ...settings,
+    efactura: {
+      ...ef,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken || ef.refreshToken,
+      tokenExpiresAt: new Date(Date.now() + (result.expiresIn ? result.expiresIn * 1000 : 90 * 86400000)).toISOString(),
+      tokenObtainedAt: new Date().toISOString(),
+    },
+  });
+  res.redirect('/admin?efactura=conectat#integrari');
+}));
+
+// Verificarea conexiunii cu SPV: un apel doar-citire (lista mesajelor) pe
+// mediul selectat. Nu trimite nicio factură; funcționează și cu integrarea
+// oprită, tocmai ca să poată fi testată înainte de activare.
+app.post('/api/admin/efactura/verify', requireAdmin, asyncRoute(async (req, res) => {
+  const { settings, ef } = await ensureFreshEfacturaToken();
+  if (!ef.accessToken) {
+    return res.status(400).json({ error: 'Lipsește token-ul de acces SPV. Apăsați „Autorizează cu ANAF" sau lipiți token-ul manual, apoi salvați.' });
+  }
+  const environment = ef.environment === 'prod' ? 'prod' : 'test';
+  const result = await testSpvConnection({
+    accessToken: ef.accessToken,
+    environment,
+    cif: settings.cui,
+  });
+  if (!result.ok) return res.status(502).json({ error: result.error, environment });
+  res.json({
+    ok: true,
+    environment,
+    message: result.message,
+    tokenExpiresAt: ef.tokenExpiresAt || '',
+  });
+}));
+
 // XML-ul UBL (CIUS-RO) se poate genera și descărca oricând, local, pentru
 // verificare; nu implică nicio comunicare cu ANAF.
 app.get('/api/admin/invoices/:id/efactura-xml', requireAdmin, asyncRoute(async (req, res) => {
@@ -1357,15 +1490,14 @@ app.get('/api/admin/invoices/:id/efactura-xml', requireAdmin, asyncRoute(async (
 // Trimiterea către SPV este blocată cât timp comutatorul efactura.enabled
 // este oprit (implicit): integrarea rămâne „în spate", fără trafic real.
 app.post('/api/admin/invoices/:id/efactura-send', requireAdmin, asyncRoute(async (req, res) => {
-  const settings = await storage.getSettings();
-  const ef = settings.efactura || {};
+  const { settings, ef } = await ensureFreshEfacturaToken();
   if (ef.enabled !== true) {
     return res.status(409).json({
       error: 'Integrarea e-Factura este dezactivată. Este pregătită, dar nu i s-a dat drumul: activați-o din Integrări după configurarea contului SPV.',
     });
   }
   if (!ef.accessToken) {
-    return res.status(400).json({ error: 'Lipsește token-ul de acces SPV. Completați-l în Integrări → e-Factura.' });
+    return res.status(400).json({ error: 'Lipsește token-ul de acces SPV. Autorizați aplicația din Integrări → e-Factura.' });
   }
   const invoice = await storage.getInvoice(req.params.id);
   if (!invoice) return res.status(404).json({ error: 'Factura nu a fost găsită.' });

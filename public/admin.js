@@ -95,6 +95,7 @@ async function showDashboard() {
   await loadAll();
   renderRangeBar();
   showSection(location.hash.slice(1) || 'comenzi');
+  handleEfacturaRedirectResult();
 }
 
 async function loadAll() {
@@ -1409,9 +1410,13 @@ function renderSettings() {
   document.getElementById('ef-clientId').value = ef.clientId || '';
   document.getElementById('ef-clientSecret').value = ef.clientSecret || '';
   document.getElementById('ef-accessToken').value = ef.accessToken || '';
+  const redirectInput = document.getElementById('ef-redirectUri');
+  redirectInput.value = ef.redirectUri || '';
+  redirectInput.placeholder = location.origin + '/api/admin/efactura/callback';
   const efPill = document.getElementById('efactura-status');
   efPill.textContent = ef.enabled === true ? `Activă (${ef.environment === 'prod' ? 'producție' : 'test'})` : 'Neactivată';
   efPill.className = 'status-pill ' + (ef.enabled === true ? 'on' : 'off');
+  renderEfacturaTokenStatus(ef);
 
   document.getElementById('s-notificationEmails').value = settings.notificationEmails || '';
 
@@ -1487,6 +1492,27 @@ async function saveTwilio() {
   await saveSettingsPatch(payload, 'twilio-msg', 'Configurarea Twilio a fost salvată.');
 }
 
+// Starea token-ului SPV: prezent / lipsă, valabilitate, refresh automat.
+function renderEfacturaTokenStatus(ef) {
+  const el = document.getElementById('ef-token-status');
+  if (!ef.accessToken) {
+    el.innerHTML = '🔑 <b>Fără token SPV.</b> Apăsați „Autorizează cu ANAF" după ce salvați Client ID și Client Secret.';
+    return;
+  }
+  const parts = ['🔑 <b>Token SPV prezent.</b>'];
+  if (ef.tokenExpiresAt) {
+    const expiry = new Date(ef.tokenExpiresAt);
+    const days = Math.floor((expiry.getTime() - Date.now()) / 86400000);
+    parts.push(days >= 0
+      ? `Valabil până la ${expiry.toLocaleDateString('ro-RO', { dateStyle: 'medium' })} (~${days} zile).`
+      : `<span style="color:var(--danger); font-weight:600;">Expirat la ${expiry.toLocaleDateString('ro-RO', { dateStyle: 'medium' })}. Reautorizați.</span>`);
+  }
+  parts.push(ef.refreshToken
+    ? 'Se reîmprospătează automat înainte de expirare.'
+    : 'Fără refresh token: la expirare va trebui reautorizat manual.');
+  el.innerHTML = parts.join(' ');
+}
+
 async function saveEfactura() {
   const payload = {
     efactura: {
@@ -1494,11 +1520,70 @@ async function saveEfactura() {
       environment: document.getElementById('ef-environment').value === 'prod' ? 'prod' : 'test',
       clientId: document.getElementById('ef-clientId').value.trim(),
       clientSecret: document.getElementById('ef-clientSecret').value.trim(),
+      redirectUri: document.getElementById('ef-redirectUri').value.trim(),
       accessToken: document.getElementById('ef-accessToken').value.trim(),
     },
   };
   await saveSettingsPatch(payload, 'efactura-msg', 'Configurarea e-Factura a fost salvată.');
   renderInvoices();
+}
+
+// Pornește autorizarea OAuth: salvează întâi configurarea, apoi trimite
+// browserul către pagina ANAF (unde se semnează cu certificatul digital).
+async function authorizeEfactura() {
+  const btn = document.getElementById('ef-authorize-btn');
+  const msg = document.getElementById('efactura-msg');
+  btn.disabled = true;
+  try {
+    await saveEfactura();
+    const res = await api('/api/admin/efactura/authorize-url', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      msg.innerHTML = `<div class="msg msg-error">${esc(data.error || 'Autorizarea nu a putut porni.')}</div>`;
+      return;
+    }
+    msg.innerHTML = '<div class="msg msg-success">Vă redirecționăm către ANAF: selectați certificatul digital și semnați. Reveniți automat aici.</div>';
+    window.location.href = data.url;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function verifyEfactura() {
+  const btn = document.getElementById('ef-verify-btn');
+  const msg = document.getElementById('efactura-msg');
+  btn.disabled = true;
+  msg.innerHTML = '<div class="msg msg-success">Se verifică conexiunea cu ANAF...</div>';
+  try {
+    const res = await api('/api/admin/efactura/verify', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      msg.innerHTML = `<div class="msg msg-error">Verificarea a eșuat${data.environment ? ` (mediul ${data.environment === 'prod' ? 'de producție' : 'de test'})` : ''}: ${esc(data.error || 'eroare necunoscută')}</div>`;
+      return;
+    }
+    msg.innerHTML = `<div class="msg msg-success">✅ ${esc(data.message)} Mediul: <b>${data.environment === 'prod' ? 'Producție (SPV real)' : 'Test (sandbox ANAF)'}</b>.</div>`;
+    // token-ul a putut fi reîmprospătat pe server; readucem setările
+    const setRes = await api('/api/admin/settings');
+    if (setRes.ok) { settings = await setRes.json(); renderSettings(); msg.innerHTML = `<div class="msg msg-success">✅ ${esc(data.message)} Mediul: <b>${data.environment === 'prod' ? 'Producție (SPV real)' : 'Test (sandbox ANAF)'}</b>.</div>`; }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// După întoarcerea de la ANAF (redirect pe /admin?efactura=...), afișăm
+// rezultatul autorizării și deschidem direct secțiunea Integrări.
+function handleEfacturaRedirectResult() {
+  const params = new URLSearchParams(location.search);
+  const result = params.get('efactura');
+  if (!result) return;
+  const reason = params.get('motiv') || '';
+  history.replaceState(null, '', '/admin' + location.hash);
+  showSection('integrari');
+  const msg = document.getElementById('efactura-msg');
+  msg.innerHTML = result === 'conectat'
+    ? '<div class="msg msg-success">✅ Autorizarea ANAF a reușit: token-ul SPV a fost obținut și salvat automat. Apăsați „Verifică conexiunea" pentru un test.</div>'
+    : `<div class="msg msg-error">Autorizarea ANAF a eșuat: ${esc(reason || 'eroare necunoscută')}.</div>`;
+  document.getElementById('section-integrari').scrollIntoView();
 }
 
 async function saveMaps() {
@@ -1737,6 +1822,8 @@ document.getElementById('save-templates-btn').onclick = saveTemplates;
 document.getElementById('save-twilio-btn').onclick = saveTwilio;
 document.getElementById('save-maps-btn').onclick = saveMaps;
 document.getElementById('save-efactura-btn').onclick = saveEfactura;
+document.getElementById('ef-authorize-btn').onclick = authorizeEfactura;
+document.getElementById('ef-verify-btn').onclick = verifyEfactura;
 document.getElementById('save-notification-emails-btn').onclick = saveNotificationEmails;
 document.getElementById('save-email-templates-btn').onclick = saveEmailTemplates;
 document.getElementById('test-sms-btn').onclick = sendTestSms;
