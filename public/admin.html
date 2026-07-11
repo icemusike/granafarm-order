@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GranaFarm — Administrare comenzi</title>
+  <title>Administrare comenzi | GranaFarm</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="stylesheet" href="/style.css">
 </head>
@@ -50,7 +50,7 @@
         <div class="card harvest-bar">
           <div class="harvest-info">
             <b>🌱 Fișă de cules</b>
-            <span>Totalul cantităților de pregătit pentru o zi de livrare — de printat pentru angajați.</span>
+            <span>Totalul cantităților de pregătit pentru o zi de livrare, de printat pentru angajați.</span>
           </div>
           <div class="harvest-controls">
             <input type="date" id="harvest-date">
@@ -272,7 +272,7 @@
             <label for="s-notificationEmails">📥 Emailuri notificare „comandă nouă" (doar pentru administratori)</label>
             <textarea id="s-notificationEmails" class="template-input" rows="2" placeholder="ex: admin1@granafarm.ro, admin2@granafarm.ro"></textarea>
           </div>
-          <p class="settings-desc" style="margin-top:6px;">Una sau mai multe adrese, separate prin virgulă — fiecare primește un email la fiecare comandă nouă intrată pe platformă, pe lângă emailul proprietarului din „Date firmă".</p>
+          <p class="settings-desc" style="margin-top:6px;">Una sau mai multe adrese, separate prin virgulă, fiecare primește un email la fiecare comandă nouă intrată pe platformă, pe lângă emailul proprietarului din „Date firmă".</p>
           <div id="marketing-msg"></div>
           <div class="actions">
             <button class="btn btn-primary" id="save-notification-emails-btn">Salvează adresele de notificare</button>
@@ -280,7 +280,7 @@
         </div>
 
         <div class="card settings-card">
-          <h3>✉️ Emailuri către client — per scenariu</h3>
+          <h3>✉️ Emailuri către client, per scenariu</h3>
           <p class="settings-desc">Fiecare scenariu are propriul email (subiect + mesaj) și un comutator de activare. Emailurile de „Primită", „Confirmată" și „În livrare" pot include linkul de urmărire a comenzii prin token-ul <code>{trackingUrl}</code>.</p>
           <div class="token-legend">
             <code>{number}</code><code>{name}</code><code>{company}</code><code>{total}</code><code>{city}</code><code>{phone}</code><code>{deliveryDate}</code><code>{trackingUrl}</code>
@@ -323,7 +323,7 @@
           <div class="switch-row">
             <div>
               <div class="switch-label">Activează trimiterea SMS</div>
-              <div class="switch-hint">Comutator general. Cât timp e oprit, SMS-urile rulează în mod simulat (doar în jurnal) — util până la aprobarea numărului de expeditor. Implicit oprit.</div>
+              <div class="switch-hint">Comutator general. Cât timp e oprit, SMS-urile rulează în mod simulat (doar în jurnal), util până la aprobarea numărului de expeditor. Implicit oprit.</div>
             </div>
             <label class="switch"><input type="checkbox" id="tw-enabled"><span class="slider"></span></label>
           </div>
@@ -380,7 +380,7 @@
     </div>
   </main>
 
-  <footer class="site">GranaFarm — panou de administrare</footer>
+  <footer class="site">GranaFarm, panou de administrare</footer>
 
   <script src="/admin.js"></script>
 </body>

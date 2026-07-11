@@ -1,8 +1,8 @@
 /**
- * GranaFarm — aplicație de comenzi legume (server de producție)
+ * GranaFarm, aplicație de comenzi legume (server de producție)
  *
  * Stocare:
- *   - PostgreSQL în producție (setați DATABASE_URL) — durabil, cu backup
+ *   - PostgreSQL în producție (setați DATABASE_URL), durabil, cu backup
  *   - fișier JSON local pentru dezvoltare (fără DATABASE_URL)
  *
  * Notificări SMS (Twilio): configurabile din panou (Integrări) sau prin
@@ -13,7 +13,7 @@
  * Notificări Email (Postmark): configurabile din panou (Configurare).
  *
  * Securitate:
- *   ADMIN_PASSWORD — parola panoului de administrare (obligatorie în producție).
+ *   ADMIN_PASSWORD, parola panoului de administrare (obligatorie în producție).
  */
 
 const express = require('express');
@@ -36,13 +36,13 @@ const IS_PROD = Boolean(process.env.DATABASE_URL) || process.env.NODE_ENV === 'p
 const DEFAULT_ADMIN_PASSWORD = 'granafarm2026';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD;
 
-// În producție, refuzăm pornirea cu parola implicită — altfel oricine ar avea acces.
+// În producție, refuzăm pornirea cu parola implicită, altfel oricine ar avea acces.
 if (IS_PROD && ADMIN_PASSWORD === DEFAULT_ADMIN_PASSWORD) {
   console.error('EROARE: setați variabila de mediu ADMIN_PASSWORD (parola implicită nu este permisă în producție).');
   process.exit(1);
 }
 
-// Twilio prin variabile de mediu — folosit doar dacă nu există configurare în panou (Integrări).
+// Twilio prin variabile de mediu, folosit doar dacă nu există configurare în panou (Integrări).
 const ENV_TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || '';
 const ENV_TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
 const ENV_TWILIO_FROM = process.env.TWILIO_FROM || '';
@@ -76,7 +76,7 @@ function redactTrackingTokens(value) {
 
 // Config Twilio activă: setările din panou (Integrări) au prioritate față de variabilele de mediu.
 // Comutatorul twilio.enabled este poarta generală: oprit (implicit) => mod
-// simulat, indiferent de credențiale — pornit doar după aprobarea numărului.
+// simulat, indiferent de credențiale, pornit doar după aprobarea numărului.
 function getTwilioConfig(settings) {
   const t = settings.twilio || {};
   if (t.enabled !== true) return null;
@@ -211,7 +211,7 @@ async function notifyOwnerNewOrder(order) {
       `Total: ${order.total.toFixed(2)} lei\nLivrare în: ${order.customer.city}\n` +
       `Telefon client: ${order.customer.phone}`;
     for (const to of recipients) {
-      await sendEmail(settings, { to, kind: 'comanda_noua', subject: `Comandă nouă ${order.number} — GranaFarm`, text });
+      await sendEmail(settings, { to, kind: 'comanda_noua', subject: `Comandă nouă ${order.number} | GranaFarm`, text });
     }
   }
 }
@@ -265,11 +265,11 @@ async function notifyClientOrderReceived(order, trackingUrl) {
   ]);
 }
 
-// „Fire and forget" cu prindere de erori — notificările nu trebuie să blocheze răspunsul HTTP.
+// „Fire and forget" cu prindere de erori, notificările nu trebuie să blocheze răspunsul HTTP.
 const fireAndForget = (p) => { p.catch((e) => console.error('Notificare eroare:', e.message)); };
 
 // ---------------------------------------------------------------------------
-// Statistici — calcule de interval de timp
+// Statistici, calcule de interval de timp
 // ---------------------------------------------------------------------------
 
 const DAY_MS = 86400000;
@@ -792,7 +792,7 @@ app.get('/track/:token', (req, res) => {
 // --- eticheta de livrare + pagina șoferului -----------------------------------
 
 // Informațiile pentru șofer, accesibile prin token-ul din codul QR de pe
-// etichetă (fără autentificare — token aleator de 43 de caractere).
+// etichetă (fără autentificare, token aleator de 43 de caractere).
 app.get('/api/orders/delivery/:token', asyncRoute(async (req, res) => {
   res.setHeader('Cache-Control', 'private, no-store, max-age=0');
   const token = String(req.params.token || '');
@@ -1110,7 +1110,7 @@ function parseProduct(body) {
 }
 
 // Construiește răspunsul public pentru setări, cu statusul integrărilor (fără a ascunde
-// valorile — panoul de administrare este deja protejat integral prin ADMIN_PASSWORD).
+// valorile, panoul de administrare este deja protejat integral prin ADMIN_PASSWORD).
 function buildSettingsResponse(settings) {
   const twilioCfg = getTwilioConfig(settings);
   return {
@@ -1169,7 +1169,7 @@ app.post('/api/admin/orders/:id/invoice', requireAdmin, asyncRoute(async (req, r
   if (Number(order.deliveryFee) > 0) {
     invoiceItems.push({
       productId: null,
-      name: `Taxă livrare${order.delivery && order.delivery.zoneName ? ` — ${order.delivery.zoneName}` : ''}`,
+      name: `Taxă livrare${order.delivery && order.delivery.zoneName ? `, ${order.delivery.zoneName}` : ''}`,
       unit: 'serviciu',
       price: round2(order.deliveryFee),
       qty: 1,
@@ -1242,7 +1242,7 @@ app.post('/api/admin/test-email', requireAdmin, asyncRoute(async (req, res) => {
   const to = (req.body && req.body.to) || settings.ownerEmail;
   if (!to) return res.status(400).json({ error: 'Introduceți o adresă de email pentru test.' });
   const entry = await sendEmail(settings, {
-    to, kind: 'test', subject: 'Email de test — GranaFarm',
+    to, kind: 'test', subject: 'Email de test | GranaFarm',
     text: 'Acesta este un email de test trimis din panoul de administrare GranaFarm.',
   });
   if (entry.status === 'eroare') return res.status(502).json({ error: entry.error || 'Trimiterea email-ului a eșuat.' });
@@ -1293,7 +1293,7 @@ app.get('/api/admin/stats', requireAdmin, asyncRoute(async (req, res) => {
     o.customer.deliveryDate && o.customer.deliveryDate <= todayStr
   ).length;
 
-  // serie zilnică pentru grafic — limitată la ultimele 90 de zile ale intervalului
+  // serie zilnică pentru grafic, limitată la ultimele 90 de zile ale intervalului
   const spanDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY_MS));
   const cappedDays = Math.min(spanDays, 90);
   const seriesStart = new Date(end.getTime() - cappedDays * DAY_MS);

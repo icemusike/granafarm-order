@@ -1,4 +1,4 @@
-/* GranaFarm — pagina privată de urmărire a comenzii */
+/* GranaFarm, pagina privată de urmărire a comenzii */
 
 const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
@@ -69,7 +69,7 @@ function renderTimeline(status) {
 function renderOrder(order, token) {
   const status = normalizeStatus(order.status);
   const cancelled = ['anulata', 'cancelled'].includes(status);
-  $('tracking-order-title').textContent = order.number || '—';
+  $('tracking-order-title').textContent = order.number || '-';
   $('tracking-status').textContent = STATUS_LABELS[status] || 'În procesare';
   $('tracking-status').classList.toggle('cancelled', cancelled);
   renderTimeline(status);
