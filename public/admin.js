@@ -1246,24 +1246,26 @@ const SMS_KIND_LABELS = {
 const STATUS_BADGE = { trimis: 'badge-livrata', simulat: 'badge-confirmata', eroare: 'badge-anulata' };
 
 function renderSmsLog() {
+  const channelLabel = smsInfo.channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
   document.getElementById('sms-provider-hint').innerHTML =
     smsInfo.provider === 'twilio'
-      ? 'Trimiterea SMS este <b>activă</b> prin Twilio. La fiecare comandă nouă primiți SMS pe telefonul proprietarului, iar clientul primește SMS când confirmați comanda.'
-      : 'SMS-urile rulează în <b>mod simulat</b> (se înregistrează doar în jurnalul de mai jos). Configurați Twilio în secțiunea de mai sus pentru trimitere reală.';
+      ? `Trimiterea mesajelor este <b>activă</b> prin Twilio, pe canalul <b>${channelLabel}</b>. La fiecare comandă nouă primiți mesaj pe telefonul proprietarului, iar clientul primește mesaj când confirmați comanda.`
+      : 'Mesajele rulează în <b>mod simulat</b> (se înregistrează doar în jurnalul de mai jos). Configurați Twilio în secțiunea de mai sus pentru trimitere reală.';
 
   const el = document.getElementById('sms-log');
   if (smsInfo.log.length === 0) {
-    el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Niciun SMS înregistrat încă.</div>';
+    el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Niciun mesaj înregistrat încă.</div>';
     return;
   }
   el.innerHTML = `
     <div class="table-wrap card" style="padding:0;">
       <table class="admin">
-        <thead><tr><th>Data</th><th>Către</th><th>Tip</th><th>Status</th><th>Mesaj</th></tr></thead>
+        <thead><tr><th>Data</th><th>Către</th><th>Canal</th><th>Tip</th><th>Status</th><th>Mesaj</th></tr></thead>
         <tbody>
           ${smsInfo.log.slice(0, 20).map((s) => `<tr>
             <td style="white-space:nowrap;">${new Date(s.at).toLocaleString('ro-RO', { dateStyle: 'short', timeStyle: 'short' })}</td>
             <td style="white-space:nowrap;">${esc(s.to)}</td>
+            <td style="white-space:nowrap;">${s.channel === 'whatsapp' ? '💬 WhatsApp' : '📱 SMS'}</td>
             <td>${SMS_KIND_LABELS[s.kind] || esc(s.kind)}</td>
             <td><span class="badge ${STATUS_BADGE[s.status] || ''}">${esc(s.status)}${s.error ? ': ' + esc(s.error) : ''}</span></td>
             <td style="max-width:420px;">${esc(s.body)}</td>
@@ -1331,7 +1333,9 @@ function renderSettings() {
   document.getElementById('tpl-clientConfirmed').value = tpl.clientConfirmed || '';
 
   const tw = settings.twilio || {};
+  const channelLabel = tw.channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
   document.getElementById('tw-enabled').checked = tw.enabled === true;
+  document.getElementById('tw-channel').value = tw.channel === 'whatsapp' ? 'whatsapp' : 'sms';
   document.getElementById('tw-accountSid').value = tw.accountSid || '';
   document.getElementById('tw-authToken').value = tw.authToken || '';
   document.getElementById('tw-fromNumber').value = tw.fromNumber || '';
@@ -1339,11 +1343,11 @@ function renderSettings() {
   document.getElementById('twilio-source-hint').innerHTML =
     settings.smsProvider === 'twilio'
       ? (settings.smsSource === 'settings'
-        ? 'SMS-urile sunt <b>active</b>, folosind datele Twilio completate mai jos.'
-        : 'SMS-urile sunt <b>active</b>, folosind variabilele de mediu Twilio setate pe host.')
+        ? `Mesajele (${channelLabel}) sunt <b>active</b>, folosind datele Twilio completate mai jos.`
+        : `Mesajele (${channelLabel}) sunt <b>active</b>, folosind variabilele de mediu Twilio setate pe host.`)
       : (tw.enabled === true
-        ? 'Comutatorul este pornit, dar SMS-urile rulează în <b>mod simulat</b>, completați datele Twilio pentru trimitere reală.'
-        : 'SMS-urile sunt <b>dezactivate</b> (mod simulat, doar în jurnal). Porniți comutatorul de mai jos după aprobarea numărului de expeditor.');
+        ? 'Comutatorul este pornit, dar mesajele rulează în <b>mod simulat</b>, completați datele Twilio pentru trimitere reală.'
+        : 'Mesajele sunt <b>dezactivate</b> (mod simulat, doar în jurnal). Porniți comutatorul de mai jos după aprobarea expeditorului.');
 
   document.getElementById('gm-apiKey').value = (settings.maps || {}).apiKey || '';
   setStatusPill('maps-status', Boolean(orderingConfig.maps && orderingConfig.maps.enabled));
@@ -1413,6 +1417,7 @@ async function saveTwilio() {
   const payload = {
     twilio: {
       enabled: document.getElementById('tw-enabled').checked,
+      channel: document.getElementById('tw-channel').value === 'whatsapp' ? 'whatsapp' : 'sms',
       accountSid: document.getElementById('tw-accountSid').value.trim(),
       authToken: document.getElementById('tw-authToken').value.trim(),
       fromNumber: document.getElementById('tw-fromNumber').value.trim(),

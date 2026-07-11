@@ -94,19 +94,39 @@ function isPostmarkConfigured(settings) {
   return Boolean(p.enabled && p.apiToken && p.fromEmail);
 }
 
+// Canalul de mesaje: SMS clasic sau WhatsApp (același API Twilio, numerele
+// se prefixează cu whatsapp:). Diacriticele se păstrează doar pe WhatsApp,
+// unde nu reduc limita de caractere.
+function messagingChannel(settings) {
+  return (settings.twilio || {}).channel === 'whatsapp' ? 'whatsapp' : 'sms';
+}
+
 async function sendSms(settings, to, body, kind) {
-  const entry = { to: normalizePhone(to), kind, body: stripDiacritics(body), status: 'simulat' };
+  const channel = messagingChannel(settings);
+  const entry = {
+    to: normalizePhone(to),
+    kind,
+    channel,
+    body: channel === 'whatsapp' ? String(body) : stripDiacritics(body),
+    status: 'simulat',
+  };
   const cfg = getTwilioConfig(settings);
 
   if (cfg) {
     try {
+      // pe canalul WhatsApp, Twilio cere prefixul whatsapp: pe ambele numere
+      const from = cfg.from.replace(/^whatsapp:/, '');
       const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${cfg.sid}/Messages.json`, {
         method: 'POST',
         headers: {
           Authorization: 'Basic ' + Buffer.from(`${cfg.sid}:${cfg.token}`).toString('base64'),
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({ To: entry.to, From: cfg.from, Body: entry.body }),
+        body: new URLSearchParams({
+          To: channel === 'whatsapp' ? `whatsapp:${entry.to}` : entry.to,
+          From: channel === 'whatsapp' ? `whatsapp:${from}` : cfg.from,
+          Body: entry.body,
+        }),
       });
       if (res.ok) {
         entry.status = 'trimis';
@@ -120,7 +140,7 @@ async function sendSms(settings, to, body, kind) {
       entry.error = e.message;
     }
   } else {
-    console.log(`[SMS simulat] catre ${entry.to}: ${redactTrackingTokens(entry.body)}`);
+    console.log(`[${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'} simulat] catre ${entry.to}: ${redactTrackingTokens(entry.body)}`);
   }
 
   const storedEntry = { ...entry, body: redactTrackingTokens(entry.body) };
@@ -1321,7 +1341,11 @@ app.post('/api/admin/orders/:id/invoice', requireAdmin, asyncRoute(async (req, r
 
 app.get('/api/admin/sms-log', requireAdmin, asyncRoute(async (req, res) => {
   const settings = await storage.getSettings();
-  res.json({ provider: getTwilioConfig(settings) ? 'twilio' : 'simulat', log: await storage.listSms() });
+  res.json({
+    provider: getTwilioConfig(settings) ? 'twilio' : 'simulat',
+    channel: messagingChannel(settings),
+    log: await storage.listSms(),
+  });
 }));
 
 app.get('/api/admin/email-log', requireAdmin, asyncRoute(async (req, res) => {
@@ -1333,8 +1357,9 @@ app.post('/api/admin/test-sms', requireAdmin, asyncRoute(async (req, res) => {
   const settings = await storage.getSettings();
   const to = (req.body && req.body.to) || settings.ownerPhone;
   if (!to) return res.status(400).json({ error: 'Introduceți un număr de telefon pentru test.' });
-  const entry = await sendSms(settings, to, 'Acesta este un SMS de test trimis din panoul de administrare GranaFarm.', 'test');
-  if (entry.status === 'eroare') return res.status(502).json({ error: entry.error || 'Trimiterea SMS a eșuat.' });
+  const channelLabel = messagingChannel(settings) === 'whatsapp' ? 'WhatsApp' : 'SMS';
+  const entry = await sendSms(settings, to, `Acesta este un mesaj de test (${channelLabel}) trimis din panoul de administrare GranaFarm.`, 'test');
+  if (entry.status === 'eroare') return res.status(502).json({ error: entry.error || 'Trimiterea mesajului a eșuat.' });
   res.json(entry);
 }));
 

@@ -330,16 +330,23 @@
         <h2>🔌 Integrări</h2>
 
         <div class="card settings-card">
-          <h3>📱 Twilio (SMS) <span class="status-pill off" id="twilio-status">Inactiv</span></h3>
+          <h3>📱 Twilio (SMS / WhatsApp) <span class="status-pill off" id="twilio-status">Inactiv</span></h3>
           <p class="settings-desc" id="twilio-source-hint"></p>
           <div class="switch-row">
             <div>
-              <div class="switch-label">Activează trimiterea SMS</div>
-              <div class="switch-hint">Comutator general. Cât timp e oprit, SMS-urile rulează în mod simulat (doar în jurnal), util până la aprobarea numărului de expeditor. Implicit oprit.</div>
+              <div class="switch-label">Activează trimiterea mesajelor</div>
+              <div class="switch-hint">Comutator general. Cât timp e oprit, mesajele rulează în mod simulat (doar în jurnal), util până la aprobarea expeditorului. Implicit oprit.</div>
             </div>
             <label class="switch"><input type="checkbox" id="tw-enabled"><span class="slider"></span></label>
           </div>
           <div class="form-grid">
+            <div class="field">
+              <label for="tw-channel">Canal de trimitere</label>
+              <select id="tw-channel">
+                <option value="sms">SMS</option>
+                <option value="whatsapp">WhatsApp</option>
+              </select>
+            </div>
             <div class="field">
               <label for="tw-accountSid">Account SID</label>
               <input id="tw-accountSid" type="text" placeholder="ex: ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
@@ -353,7 +360,7 @@
               <input id="tw-fromNumber" type="text" placeholder="ex: +40712345678">
             </div>
           </div>
-          <p class="settings-desc">Lăsați toate cele 3 câmpuri goale pentru a folosi variabilele de mediu <code>TWILIO_ACCOUNT_SID</code> / <code>TWILIO_AUTH_TOKEN</code> / <code>TWILIO_FROM</code> setate pe host (dacă există).</p>
+          <p class="settings-desc">Pe canalul <b>WhatsApp</b> se folosește același cont Twilio, cu un expeditor WhatsApp aprobat (numărul se prefixează automat cu <code>whatsapp:</code>). Lăsați câmpurile de credențiale goale pentru a folosi variabilele de mediu <code>TWILIO_ACCOUNT_SID</code> / <code>TWILIO_AUTH_TOKEN</code> / <code>TWILIO_FROM</code> setate pe host (dacă există).</p>
           <div id="twilio-msg"></div>
           <div class="actions">
             <button class="btn btn-primary" id="save-twilio-btn">Salvează configurarea Twilio</button>
@@ -363,9 +370,9 @@
             <label for="test-sms-to">📤 Testează trimiterea către un număr de telefon</label>
             <div class="test-send-row">
               <input id="test-sms-to" type="tel" placeholder="ex: 0722 123 456">
-              <button class="btn btn-ghost" id="test-sms-btn">Trimite SMS de test</button>
+              <button class="btn btn-ghost" id="test-sms-btn">Trimite mesaj de test</button>
             </div>
-            <p class="test-send-hint">Se trimite un SMS de probă la numărul de mai sus. Salvați mai întâi datele Twilio pentru un test real; altfel mesajul apare doar în jurnal (mod simulat).</p>
+            <p class="test-send-hint">Se trimite un mesaj de probă (pe canalul selectat) la numărul de mai sus. Salvați mai întâi datele Twilio pentru un test real; altfel mesajul apare doar în jurnal (mod simulat).</p>
           </div>
         </div>
 
@@ -385,7 +392,7 @@
           </div>
         </div>
 
-        <h2>📨 Jurnal SMS</h2>
+        <h2>📨 Jurnal mesaje (SMS / WhatsApp)</h2>
         <p class="section-hint" id="sms-provider-hint"></p>
         <div id="sms-log"></div>
       </section>
