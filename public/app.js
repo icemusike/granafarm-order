@@ -141,6 +141,9 @@ const VEGGIE_IMAGES = [
   [/gogosar/, '/images/products/gogosar_rosu.png'],
   [/castraveti cornison/, '/images/products/castraveti_cornison.png'],
   [/vinete/, '/images/products/vinete_de_gradina.png'],
+  [/ceapa verde/, '/images/products/ceapa_verde.png'],
+  [/cartofi/, '/images/products/cartofi_roz.png'],
+  [/fasole/, '/images/products/fasole_verde_lata.png'],
 ];
 
 function categoryImage(product) {
