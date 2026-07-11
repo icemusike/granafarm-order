@@ -1,0 +1,17 @@
+{
+  "name": "GranaFarm | Comandă produse proaspete",
+  "short_name": "GranaFarm",
+  "description": "Comandă roșii și legume proaspete direct de la sera GranaFarm, cu livrare la ușă.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F7F6",
+  "theme_color": "#388E3C",
+  "lang": "ro",
+  "icons": [
+    { "src": "/favicon.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon.png", "sizes": "256x256", "type": "image/png", "purpose": "maskable" }
+  ]
+}

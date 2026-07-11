@@ -21,6 +21,7 @@ const path = require('path');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const { createStorage } = require('./lib/storage');
+const { buildEFacturaXml, uploadToSpv } = require('./lib/efactura');
 const {
   DEFAULT_SETTINGS,
   SETTINGS_SCHEMA,
@@ -94,19 +95,39 @@ function isPostmarkConfigured(settings) {
   return Boolean(p.enabled && p.apiToken && p.fromEmail);
 }
 
+// Canalul de mesaje: SMS clasic sau WhatsApp (același API Twilio, numerele
+// se prefixează cu whatsapp:). Diacriticele se păstrează doar pe WhatsApp,
+// unde nu reduc limita de caractere.
+function messagingChannel(settings) {
+  return (settings.twilio || {}).channel === 'whatsapp' ? 'whatsapp' : 'sms';
+}
+
 async function sendSms(settings, to, body, kind) {
-  const entry = { to: normalizePhone(to), kind, body: stripDiacritics(body), status: 'simulat' };
+  const channel = messagingChannel(settings);
+  const entry = {
+    to: normalizePhone(to),
+    kind,
+    channel,
+    body: channel === 'whatsapp' ? String(body) : stripDiacritics(body),
+    status: 'simulat',
+  };
   const cfg = getTwilioConfig(settings);
 
   if (cfg) {
     try {
+      // pe canalul WhatsApp, Twilio cere prefixul whatsapp: pe ambele numere
+      const from = cfg.from.replace(/^whatsapp:/, '');
       const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${cfg.sid}/Messages.json`, {
         method: 'POST',
         headers: {
           Authorization: 'Basic ' + Buffer.from(`${cfg.sid}:${cfg.token}`).toString('base64'),
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({ To: entry.to, From: cfg.from, Body: entry.body }),
+        body: new URLSearchParams({
+          To: channel === 'whatsapp' ? `whatsapp:${entry.to}` : entry.to,
+          From: channel === 'whatsapp' ? `whatsapp:${from}` : cfg.from,
+          Body: entry.body,
+        }),
       });
       if (res.ok) {
         entry.status = 'trimis';
@@ -120,7 +141,7 @@ async function sendSms(settings, to, body, kind) {
       entry.error = e.message;
     }
   } else {
-    console.log(`[SMS simulat] catre ${entry.to}: ${redactTrackingTokens(entry.body)}`);
+    console.log(`[${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'} simulat] catre ${entry.to}: ${redactTrackingTokens(entry.body)}`);
   }
 
   const storedEntry = { ...entry, body: redactTrackingTokens(entry.body) };
@@ -995,6 +1016,107 @@ app.patch('/api/admin/orders/:id', requireAdmin, asyncRoute(async (req, res) => 
   res.json(order);
 }));
 
+// --- Clienți (CRM) -----------------------------------------------------------
+// Profilurile se agregă din comenzile existente, grupate după telefonul
+// normalizat; notițele interne se păstrează separat, în tabela de clienți.
+
+const CLIENT_KEY_RE = /^\+\d{6,20}$/;
+
+function aggregateClients(orders, clientData) {
+  const map = new Map();
+  const chronological = [...orders].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  for (const order of chronological) {
+    const key = order.customer && order.customer.phone ? normalizePhone(order.customer.phone) : '';
+    if (!CLIENT_KEY_RE.test(key)) continue;
+    let client = map.get(key);
+    if (!client) {
+      client = {
+        key,
+        ordersCount: 0,
+        cancelledCount: 0,
+        totalSpent: 0,
+        deliveredTotal: 0,
+        unpaidOrders: [],
+        orders: [],
+        productTotals: new Map(),
+        firstOrderAt: order.createdAt,
+      };
+      map.set(key, client);
+    }
+    // datele de contact cele mai recente câștigă (parcurgem cronologic)
+    client.phone = order.customer.phone;
+    client.name = order.customer.name;
+    client.company = order.customer.company || '';
+    client.cui = order.customer.cui || '';
+    client.email = order.customer.email || '';
+    client.city = order.customer.city || '';
+    client.address = order.customer.address || '';
+    client.type = order.customer.type || 'altul';
+    client.lastOrderAt = order.createdAt;
+    client.orders.push({
+      id: order.id,
+      number: order.number,
+      createdAt: order.createdAt,
+      deliveryDate: (order.delivery && order.delivery.date) || order.customer.deliveryDate || '',
+      total: Number(order.total),
+      status: order.status,
+      paid: Boolean(order.payment && order.payment.paid),
+      paymentMethod: order.payment && order.payment.paid ? order.payment.method : '',
+      invoiceNumber: order.invoiceNumber || '',
+    });
+    if (order.status === 'anulata') {
+      client.cancelledCount += 1;
+      continue;
+    }
+    client.ordersCount += 1;
+    client.totalSpent = round2(client.totalSpent + Number(order.total));
+    if (order.status === 'livrata') {
+      client.deliveredTotal = round2(client.deliveredTotal + Number(order.total));
+      // restanță = livrată, dar neachitată
+      if (!(order.payment && order.payment.paid)) {
+        client.unpaidOrders.push({
+          number: order.number,
+          total: Number(order.total),
+          deliveryDate: (order.delivery && order.delivery.date) || order.customer.deliveryDate || '',
+        });
+      }
+    }
+    for (const item of order.items || []) {
+      const itemKey = `${item.name}|${item.unit}`;
+      const entry = client.productTotals.get(itemKey) || { name: item.name, unit: item.unit, qty: 0, times: 0 };
+      entry.qty = round2(entry.qty + Number(item.qty));
+      entry.times += 1;
+      client.productTotals.set(itemKey, entry);
+    }
+  }
+  return [...map.values()].map((client) => {
+    const { productTotals, ...rest } = client;
+    const stored = clientData[client.key] || {};
+    return {
+      ...rest,
+      orders: [...client.orders].reverse(),
+      favoriteProducts: [...productTotals.values()].sort((a, b) => b.qty - a.qty).slice(0, 3),
+      unpaidTotal: round2(client.unpaidOrders.reduce((sum, entry) => sum + entry.total, 0)),
+      notes: typeof stored.notes === 'string' ? stored.notes : '',
+    };
+  }).sort((a, b) => b.totalSpent - a.totalSpent);
+}
+
+app.get('/api/admin/clients', requireAdmin, asyncRoute(async (req, res) => {
+  const [orders, clientData] = await Promise.all([storage.listOrders(), storage.listClientData()]);
+  res.json(aggregateClients(orders, clientData));
+}));
+
+app.patch('/api/admin/clients/:key', requireAdmin, asyncRoute(async (req, res) => {
+  const key = String(req.params.key || '');
+  if (!CLIENT_KEY_RE.test(key)) return res.status(400).json({ error: 'Identificatorul clientului nu este valid.' });
+  const body = req.body || {};
+  if (typeof body.notes !== 'string') return res.status(400).json({ error: 'Notițele trebuie să fie text.' });
+  if (body.notes.length > 4000) return res.status(400).json({ error: 'Notițele pot avea cel mult 4000 de caractere.' });
+  const saved = await storage.saveClientData(key, { notes: body.notes.trim() });
+  res.json({ key, notes: saved.notes || '' });
+}));
+
 app.delete('/api/admin/orders/:id', requireAdmin, asyncRoute(async (req, res) => {
   // Șterge definitiv comanda și facturile emise pentru ea (comenzi de test).
   const ok = await storage.deleteOrder(req.params.id);
@@ -1218,9 +1340,60 @@ app.post('/api/admin/orders/:id/invoice', requireAdmin, asyncRoute(async (req, r
   res.status(result.invoice.orderId ? 201 : 200).json(result.invoice);
 }));
 
+// --- e-Factura (ANAF SPV), integrare pregătită dar NEACTIVATĂ implicit ------
+
+// XML-ul UBL (CIUS-RO) se poate genera și descărca oricând, local, pentru
+// verificare; nu implică nicio comunicare cu ANAF.
+app.get('/api/admin/invoices/:id/efactura-xml', requireAdmin, asyncRoute(async (req, res) => {
+  const invoice = await storage.getInvoice(req.params.id);
+  if (!invoice) return res.status(404).json({ error: 'Factura nu a fost găsită.' });
+  const settings = await storage.getSettings();
+  const xml = buildEFacturaXml(invoice, settings);
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="efactura-${invoice.number}.xml"`);
+  res.send(xml);
+}));
+
+// Trimiterea către SPV este blocată cât timp comutatorul efactura.enabled
+// este oprit (implicit): integrarea rămâne „în spate", fără trafic real.
+app.post('/api/admin/invoices/:id/efactura-send', requireAdmin, asyncRoute(async (req, res) => {
+  const settings = await storage.getSettings();
+  const ef = settings.efactura || {};
+  if (ef.enabled !== true) {
+    return res.status(409).json({
+      error: 'Integrarea e-Factura este dezactivată. Este pregătită, dar nu i s-a dat drumul: activați-o din Integrări după configurarea contului SPV.',
+    });
+  }
+  if (!ef.accessToken) {
+    return res.status(400).json({ error: 'Lipsește token-ul de acces SPV. Completați-l în Integrări → e-Factura.' });
+  }
+  const invoice = await storage.getInvoice(req.params.id);
+  if (!invoice) return res.status(404).json({ error: 'Factura nu a fost găsită.' });
+  if (invoice.efactura && invoice.efactura.status === 'trimisa') {
+    return res.status(409).json({ error: `Factura a fost deja trimisă în SPV (index ${invoice.efactura.uploadIndex}).` });
+  }
+  const xml = buildEFacturaXml(invoice, settings);
+  const result = await uploadToSpv({
+    xml,
+    accessToken: ef.accessToken,
+    cif: settings.cui,
+    environment: ef.environment === 'prod' ? 'prod' : 'test',
+  });
+  const efStatus = result.ok
+    ? { status: 'trimisa', uploadIndex: result.uploadIndex, environment: ef.environment === 'prod' ? 'prod' : 'test', at: new Date().toISOString() }
+    : { status: 'eroare', error: result.error, at: new Date().toISOString() };
+  const updated = await storage.setInvoiceEfactura(invoice.id, efStatus);
+  if (!result.ok) return res.status(502).json({ error: `Trimiterea în SPV a eșuat: ${result.error}`, invoice: updated });
+  res.json(updated);
+}));
+
 app.get('/api/admin/sms-log', requireAdmin, asyncRoute(async (req, res) => {
   const settings = await storage.getSettings();
-  res.json({ provider: getTwilioConfig(settings) ? 'twilio' : 'simulat', log: await storage.listSms() });
+  res.json({
+    provider: getTwilioConfig(settings) ? 'twilio' : 'simulat',
+    channel: messagingChannel(settings),
+    log: await storage.listSms(),
+  });
 }));
 
 app.get('/api/admin/email-log', requireAdmin, asyncRoute(async (req, res) => {
@@ -1232,8 +1405,9 @@ app.post('/api/admin/test-sms', requireAdmin, asyncRoute(async (req, res) => {
   const settings = await storage.getSettings();
   const to = (req.body && req.body.to) || settings.ownerPhone;
   if (!to) return res.status(400).json({ error: 'Introduceți un număr de telefon pentru test.' });
-  const entry = await sendSms(settings, to, 'Acesta este un SMS de test trimis din panoul de administrare GranaFarm.', 'test');
-  if (entry.status === 'eroare') return res.status(502).json({ error: entry.error || 'Trimiterea SMS a eșuat.' });
+  const channelLabel = messagingChannel(settings) === 'whatsapp' ? 'WhatsApp' : 'SMS';
+  const entry = await sendSms(settings, to, `Acesta este un mesaj de test (${channelLabel}) trimis din panoul de administrare GranaFarm.`, 'test');
+  if (entry.status === 'eroare') return res.status(502).json({ error: entry.error || 'Trimiterea mesajului a eșuat.' });
   res.json(entry);
 }));
 

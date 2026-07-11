@@ -43,7 +43,11 @@ let activeRange = 'last7';
 let customFrom = '';
 let customTo = '';
 let statsLoadedOnce = false;
+let clients = [];
+let clientsLoadedOnce = false;
+let clientSearch = '';
 const expanded = new Set();
+const clientExpanded = new Set();
 
 const lei = (v) => v.toFixed(2).replace('.', ',') + ' lei';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -129,7 +133,7 @@ async function loadAll() {
 
 // --- navigare / rutare ---------------------------------------------------------
 
-const SECTIONS = ['comenzi', 'statistici', 'produse', 'facturi', 'configurare', 'integrari'];
+const SECTIONS = ['comenzi', 'clienti', 'statistici', 'produse', 'facturi', 'configurare', 'integrari'];
 
 function showSection(name) {
   if (!SECTIONS.includes(name)) name = 'comenzi';
@@ -139,6 +143,10 @@ function showSection(name) {
   if (name === 'statistici' && !statsLoadedOnce) {
     statsLoadedOnce = true;
     loadStats();
+  }
+  if (name === 'clienti' && !clientsLoadedOnce) {
+    clientsLoadedOnce = true;
+    loadClients();
   }
 }
 
@@ -507,6 +515,7 @@ function renderOrders() {
         renderNavBadge();
         renderFilter();
         renderOrders();
+        invalidateClients();
         if (statsLoadedOnce && !document.getElementById('section-statistici').classList.contains('hidden')) loadStats();
         // confirmarea poate genera un SMS/email către client
         api('/api/admin/sms-log').then((r) => r.json()).then((d) => { smsInfo = d; renderSmsLog(); });
@@ -524,6 +533,7 @@ function renderOrders() {
       if (res.ok) {
         Object.assign(o, await res.json());
         renderOrders();
+        invalidateClients();
         if (statsLoadedOnce && !document.getElementById('section-statistici').classList.contains('hidden')) loadStats();
         api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
       } else {
@@ -565,6 +575,7 @@ function renderOrders() {
       renderFilter();
       renderOrders();
       renderInvoices();
+      invalidateClients();
       if (statsLoadedOnce) loadStats();
     };
 
@@ -633,6 +644,7 @@ function renderOrders() {
           editingOrderId = null;
           renderFilter();
           renderOrders();
+          invalidateClients();
           if (statsLoadedOnce) loadStats();
         } finally {
           btn.disabled = false;
@@ -939,7 +951,167 @@ async function renderAdminMap(element, location) {
   }
 }
 
+// --- clienți (CRM) ---------------------------------------------------------
+// Fișele se agregă pe server din comenzile plasate (grupate după telefon).
+
+// Comenzile s-au schimbat, deci fișele de client trebuie reîncărcate: imediat
+// dacă secțiunea e vizibilă, altfel la următoarea deschidere a tab-ului.
+function invalidateClients() {
+  if (!clientsLoadedOnce) return;
+  if (!document.getElementById('section-clienti').classList.contains('hidden')) loadClients();
+  else clientsLoadedOnce = false;
+}
+
+async function loadClients() {
+  const el = document.getElementById('clients');
+  el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Se încarcă clienții...</div>';
+  const res = await api('/api/admin/clients');
+  if (!res.ok) {
+    el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Clienții nu au putut fi încărcați.</div>';
+    return;
+  }
+  clients = await res.json();
+  renderClients();
+}
+
+function clientMatchesSearch(c, needle) {
+  if (!needle) return true;
+  const haystack = [c.name, c.company, c.phone, c.city, c.email]
+    .join(' ')
+    .toLowerCase();
+  return needle.split(/\s+/).every((word) => haystack.includes(word));
+}
+
+const roDateTime = (iso) => new Date(iso).toLocaleDateString('ro-RO', { dateStyle: 'medium' });
+
+function clientBodyHtml(c) {
+  const history = c.orders.map((o) => `<tr>
+      <td><b>${esc(o.number)}</b></td>
+      <td style="white-space:nowrap;">${roDateTime(o.createdAt)}</td>
+      <td style="white-space:nowrap;">${o.deliveryDate ? ro(o.deliveryDate) : '-'}</td>
+      <td><span class="badge badge-${o.status}">${STATUS_LABELS[o.status] || esc(o.status)}</span></td>
+      <td>${o.paid ? `<span class="badge badge-livrata">💰 ${PAYMENT_LABELS[o.paymentMethod] || 'Achitat'}</span>` : '<span class="badge badge-noua">Neachitat</span>'}</td>
+      <td class="num"><b>${lei(o.total)}</b></td>
+    </tr>`).join('');
+
+  const favorites = c.favoriteProducts.length
+    ? c.favoriteProducts.map((p) => `<div class="detail-line">🥇 <b>${esc(p.name)}</b>: ${p.qty % 1 === 0 ? p.qty : String(p.qty).replace('.', ',')} ${esc(p.unit)} în ${p.times} ${p.times === 1 ? 'comandă' : 'comenzi'}</div>`).join('')
+    : '<div class="detail-line" style="color:var(--muted);">Fără produse încă.</div>';
+
+  const unpaid = c.unpaidOrders.length
+    ? `<div class="client-unpaid">
+        <b>⚠️ Restanțe: ${lei(c.unpaidTotal)}</b>
+        ${c.unpaidOrders.map((u) => `<div class="detail-line">${esc(u.number)}${u.deliveryDate ? ` · livrată ${ro(u.deliveryDate)}` : ''} · <b>${lei(u.total)}</b></div>`).join('')}
+      </div>`
+    : '';
+
+  return `
+        <div>
+          <h4>Contact și acțiuni rapide</h4>
+          <div class="detail-line"><b>Telefon:</b> <a href="tel:${esc(String(c.phone).replace(/\s/g, ''))}">${esc(c.phone)}</a></div>
+          ${c.email ? `<div class="detail-line"><b>Email:</b> <a href="mailto:${esc(c.email)}">${esc(c.email)}</a></div>` : ''}
+          ${c.company ? `<div class="detail-line"><b>Firmă:</b> ${esc(c.company)}${c.cui ? ` · CUI ${esc(c.cui)}` : ''}</div>` : ''}
+          <div class="detail-line"><b>Adresă:</b> ${esc(c.address)}, ${esc(c.city)}</div>
+          <div class="detail-line"><b>Client din:</b> ${roDateTime(c.firstOrderAt)} · <b>Ultima comandă:</b> ${roDateTime(c.lastOrderAt)}</div>
+          ${unpaid}
+          <h4 style="margin-top:14px;">Produse preferate</h4>
+          ${favorites}
+          <h4 style="margin-top:14px;">📝 Notițe interne</h4>
+          <textarea data-client-notes rows="3" class="template-input" placeholder="ex: preferă livrarea dimineața, plătește prin transfer...">${esc(c.notes || '')}</textarea>
+          <div data-client-notes-msg></div>
+          <div class="actions" style="margin-top:8px;">
+            <button class="btn-small save" data-save-client-notes>💾 Salvează notițele</button>
+          </div>
+        </div>
+        <div>
+          <h4>Istoric comenzi (${c.orders.length})</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Comanda</th><th>Plasată</th><th>Livrare</th><th>Status</th><th>Plată</th><th class="num">Total</th></tr></thead>
+              <tbody>${history}</tbody>
+            </table>
+          </div>
+        </div>`;
+}
+
+function renderClients() {
+  const el = document.getElementById('clients');
+  const needle = clientSearch.trim().toLowerCase();
+  const list = clients.filter((c) => clientMatchesSearch(c, needle));
+  document.getElementById('client-count').textContent =
+    `${list.length} ${list.length === 1 ? 'client' : 'clienți'}${needle ? ` (din ${clients.length})` : ''}`;
+
+  if (list.length === 0) {
+    el.innerHTML = `<div class="card" style="text-align:center; color: var(--muted);">${needle ? 'Niciun client nu corespunde căutării.' : 'Încă nu există clienți. Fișele apar automat după prima comandă.'}</div>`;
+    return;
+  }
+
+  el.innerHTML = '';
+  for (const c of list) {
+    const card = document.createElement('div');
+    card.className = 'order-card' + (clientExpanded.has(c.key) ? ' open' : '');
+    const company = c.company ? ` · ${esc(c.company)}` : '';
+    card.innerHTML = `
+      <div class="order-head">
+        <div class="who">
+          <span class="name">${esc(c.name)}${company}</span>
+          <span class="meta">${TYPE_LABELS[c.type] || 'Altul'} · ${esc(c.city)} · ${esc(c.phone)} · ${c.ordersCount} ${c.ordersCount === 1 ? 'comandă' : 'comenzi'}</span>
+        </div>
+        <div class="right">
+          <span class="total">${lei(c.totalSpent)}</span>
+          ${c.unpaidTotal > 0 ? `<span class="badge badge-anulata">Restanțe ${lei(c.unpaidTotal)}</span>` : ''}
+          ${c.notes ? '<span class="badge badge-confirmata">📝 notițe</span>' : ''}
+          <span class="chev">▼</span>
+        </div>
+      </div>
+      <div class="order-body ${clientExpanded.has(c.key) ? '' : 'hidden'}">
+        ${clientBodyHtml(c)}
+      </div>`;
+
+    card.querySelector('.order-head').onclick = () => {
+      if (clientExpanded.has(c.key)) clientExpanded.delete(c.key);
+      else clientExpanded.add(c.key);
+      renderClients();
+    };
+
+    const saveBtn = card.querySelector('[data-save-client-notes]');
+    if (saveBtn) saveBtn.onclick = async (e) => {
+      e.stopPropagation();
+      const notes = card.querySelector('[data-client-notes]').value;
+      const msg = card.querySelector('[data-client-notes-msg]');
+      saveBtn.disabled = true;
+      try {
+        const res = await api(`/api/admin/clients/${encodeURIComponent(c.key)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ notes }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          msg.innerHTML = `<div class="msg msg-error">${esc(data.error || 'Salvarea a eșuat.')}</div>`;
+          return;
+        }
+        c.notes = data.notes;
+        msg.innerHTML = '<div class="msg msg-success">Notițele au fost salvate.</div>';
+        setTimeout(() => { msg.innerHTML = ''; }, 3000);
+      } finally {
+        saveBtn.disabled = false;
+      }
+    };
+
+    el.appendChild(card);
+  }
+}
+
 // --- facturi -------------------------------------------------------------------
+
+// Starea e-Factura a unei facturi: netrimisă implicit; trimisă / eroare
+// după o încercare de trimitere în SPV.
+function efacturaBadge(inv) {
+  const ef = inv.efactura;
+  if (ef && ef.status === 'trimisa') return `<span class="badge badge-livrata" title="index ${esc(ef.uploadIndex || '')}">SPV: trimisă</span>`;
+  if (ef && ef.status === 'eroare') return `<span class="badge badge-anulata" title="${esc(ef.error || '')}">SPV: eroare</span>`;
+  return '<span class="badge badge-noua">SPV: netrimisă</span>';
+}
 
 function renderInvoices() {
   const el = document.getElementById('invoices');
@@ -947,10 +1119,11 @@ function renderInvoices() {
     el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Nu a fost emisă nicio factură încă.</div>';
     return;
   }
+  const efEnabled = (settings.efactura || {}).enabled === true;
   el.innerHTML = `
     <div class="table-wrap card" style="padding:0;">
       <table class="admin">
-        <thead><tr><th>Factura</th><th>Data</th><th>Client</th><th>Comanda</th><th class="num">Total</th><th>Acțiuni</th></tr></thead>
+        <thead><tr><th>Factura</th><th>Data</th><th>Client</th><th>Comanda</th><th class="num">Total</th><th>e-Factura</th><th>Acțiuni</th></tr></thead>
         <tbody>
           ${invoices.map((inv) => `<tr>
             <td><b>${esc(inv.number)}</b></td>
@@ -958,13 +1131,54 @@ function renderInvoices() {
             <td>${esc(inv.buyer.name)}</td>
             <td>${esc(inv.orderNumber)}</td>
             <td class="num"><b>${lei(inv.total)}</b></td>
-            <td><button class="btn-small save" data-inv="${inv.id}">Vezi / Printează</button></td>
+            <td>${efacturaBadge(inv)}</td>
+            <td style="white-space:nowrap;">
+              <button class="btn-small save" data-inv="${inv.id}">Vezi / Printează</button>
+              <button class="btn-small" data-efactura-xml="${inv.id}" title="Descarcă XML-ul UBL (CIUS-RO) pentru verificare">⬇️ XML</button>
+              ${efEnabled && !(inv.efactura && inv.efactura.status === 'trimisa') ? `<button class="btn-small save" data-efactura-send="${inv.id}">📤 Trimite în SPV</button>` : ''}
+            </td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>`;
   el.querySelectorAll('[data-inv]').forEach((btn) => {
     btn.onclick = () => openInvoice(invoices.find((i) => i.id === btn.dataset.inv));
+  });
+  el.querySelectorAll('[data-efactura-xml]').forEach((btn) => {
+    btn.onclick = async () => {
+      const inv = invoices.find((i) => i.id === btn.dataset.efacturaXml);
+      const res = await api(`/api/admin/invoices/${inv.id}/efactura-xml`);
+      if (!res.ok) { alert('Descărcarea XML-ului a eșuat.'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `efactura-${inv.number}.xml`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    };
+  });
+  el.querySelectorAll('[data-efactura-send]').forEach((btn) => {
+    btn.onclick = async () => {
+      const inv = invoices.find((i) => i.id === btn.dataset.efacturaSend);
+      if (!confirm(`Trimiteți factura ${inv.number} în SPV (${(settings.efactura || {}).environment === 'prod' ? 'PRODUCȚIE' : 'mediul de test'})?`)) return;
+      btn.disabled = true;
+      try {
+        const res = await api(`/api/admin/invoices/${inv.id}/efactura-send`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || 'Trimiterea în SPV a eșuat.');
+          if (data.invoice) Object.assign(inv, data.invoice);
+        } else {
+          Object.assign(inv, data);
+        }
+        renderInvoices();
+      } finally {
+        btn.disabled = false;
+      }
+    };
   });
 }
 
@@ -1083,24 +1297,26 @@ const SMS_KIND_LABELS = {
 const STATUS_BADGE = { trimis: 'badge-livrata', simulat: 'badge-confirmata', eroare: 'badge-anulata' };
 
 function renderSmsLog() {
+  const channelLabel = smsInfo.channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
   document.getElementById('sms-provider-hint').innerHTML =
     smsInfo.provider === 'twilio'
-      ? 'Trimiterea SMS este <b>activă</b> prin Twilio. La fiecare comandă nouă primiți SMS pe telefonul proprietarului, iar clientul primește SMS când confirmați comanda.'
-      : 'SMS-urile rulează în <b>mod simulat</b> (se înregistrează doar în jurnalul de mai jos). Configurați Twilio în secțiunea de mai sus pentru trimitere reală.';
+      ? `Trimiterea mesajelor este <b>activă</b> prin Twilio, pe canalul <b>${channelLabel}</b>. La fiecare comandă nouă primiți mesaj pe telefonul proprietarului, iar clientul primește mesaj când confirmați comanda.`
+      : 'Mesajele rulează în <b>mod simulat</b> (se înregistrează doar în jurnalul de mai jos). Configurați Twilio în secțiunea de mai sus pentru trimitere reală.';
 
   const el = document.getElementById('sms-log');
   if (smsInfo.log.length === 0) {
-    el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Niciun SMS înregistrat încă.</div>';
+    el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Niciun mesaj înregistrat încă.</div>';
     return;
   }
   el.innerHTML = `
     <div class="table-wrap card" style="padding:0;">
       <table class="admin">
-        <thead><tr><th>Data</th><th>Către</th><th>Tip</th><th>Status</th><th>Mesaj</th></tr></thead>
+        <thead><tr><th>Data</th><th>Către</th><th>Canal</th><th>Tip</th><th>Status</th><th>Mesaj</th></tr></thead>
         <tbody>
           ${smsInfo.log.slice(0, 20).map((s) => `<tr>
             <td style="white-space:nowrap;">${new Date(s.at).toLocaleString('ro-RO', { dateStyle: 'short', timeStyle: 'short' })}</td>
             <td style="white-space:nowrap;">${esc(s.to)}</td>
+            <td style="white-space:nowrap;">${s.channel === 'whatsapp' ? '💬 WhatsApp' : '📱 SMS'}</td>
             <td>${SMS_KIND_LABELS[s.kind] || esc(s.kind)}</td>
             <td><span class="badge ${STATUS_BADGE[s.status] || ''}">${esc(s.status)}${s.error ? ': ' + esc(s.error) : ''}</span></td>
             <td style="max-width:420px;">${esc(s.body)}</td>
@@ -1168,7 +1384,9 @@ function renderSettings() {
   document.getElementById('tpl-clientConfirmed').value = tpl.clientConfirmed || '';
 
   const tw = settings.twilio || {};
+  const channelLabel = tw.channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
   document.getElementById('tw-enabled').checked = tw.enabled === true;
+  document.getElementById('tw-channel').value = tw.channel === 'whatsapp' ? 'whatsapp' : 'sms';
   document.getElementById('tw-accountSid').value = tw.accountSid || '';
   document.getElementById('tw-authToken').value = tw.authToken || '';
   document.getElementById('tw-fromNumber').value = tw.fromNumber || '';
@@ -1176,14 +1394,24 @@ function renderSettings() {
   document.getElementById('twilio-source-hint').innerHTML =
     settings.smsProvider === 'twilio'
       ? (settings.smsSource === 'settings'
-        ? 'SMS-urile sunt <b>active</b>, folosind datele Twilio completate mai jos.'
-        : 'SMS-urile sunt <b>active</b>, folosind variabilele de mediu Twilio setate pe host.')
+        ? `Mesajele (${channelLabel}) sunt <b>active</b>, folosind datele Twilio completate mai jos.`
+        : `Mesajele (${channelLabel}) sunt <b>active</b>, folosind variabilele de mediu Twilio setate pe host.`)
       : (tw.enabled === true
-        ? 'Comutatorul este pornit, dar SMS-urile rulează în <b>mod simulat</b>, completați datele Twilio pentru trimitere reală.'
-        : 'SMS-urile sunt <b>dezactivate</b> (mod simulat, doar în jurnal). Porniți comutatorul de mai jos după aprobarea numărului de expeditor.');
+        ? 'Comutatorul este pornit, dar mesajele rulează în <b>mod simulat</b>, completați datele Twilio pentru trimitere reală.'
+        : 'Mesajele sunt <b>dezactivate</b> (mod simulat, doar în jurnal). Porniți comutatorul de mai jos după aprobarea expeditorului.');
 
   document.getElementById('gm-apiKey').value = (settings.maps || {}).apiKey || '';
   setStatusPill('maps-status', Boolean(orderingConfig.maps && orderingConfig.maps.enabled));
+
+  const ef = settings.efactura || {};
+  document.getElementById('ef-enabled').checked = ef.enabled === true;
+  document.getElementById('ef-environment').value = ef.environment === 'prod' ? 'prod' : 'test';
+  document.getElementById('ef-clientId').value = ef.clientId || '';
+  document.getElementById('ef-clientSecret').value = ef.clientSecret || '';
+  document.getElementById('ef-accessToken').value = ef.accessToken || '';
+  const efPill = document.getElementById('efactura-status');
+  efPill.textContent = ef.enabled === true ? `Activă (${ef.environment === 'prod' ? 'producție' : 'test'})` : 'Neactivată';
+  efPill.className = 'status-pill ' + (ef.enabled === true ? 'on' : 'off');
 
   document.getElementById('s-notificationEmails').value = settings.notificationEmails || '';
 
@@ -1250,12 +1478,27 @@ async function saveTwilio() {
   const payload = {
     twilio: {
       enabled: document.getElementById('tw-enabled').checked,
+      channel: document.getElementById('tw-channel').value === 'whatsapp' ? 'whatsapp' : 'sms',
       accountSid: document.getElementById('tw-accountSid').value.trim(),
       authToken: document.getElementById('tw-authToken').value.trim(),
       fromNumber: document.getElementById('tw-fromNumber').value.trim(),
     },
   };
   await saveSettingsPatch(payload, 'twilio-msg', 'Configurarea Twilio a fost salvată.');
+}
+
+async function saveEfactura() {
+  const payload = {
+    efactura: {
+      enabled: document.getElementById('ef-enabled').checked,
+      environment: document.getElementById('ef-environment').value === 'prod' ? 'prod' : 'test',
+      clientId: document.getElementById('ef-clientId').value.trim(),
+      clientSecret: document.getElementById('ef-clientSecret').value.trim(),
+      accessToken: document.getElementById('ef-accessToken').value.trim(),
+    },
+  };
+  await saveSettingsPatch(payload, 'efactura-msg', 'Configurarea e-Factura a fost salvată.');
+  renderInvoices();
 }
 
 async function saveMaps() {
@@ -1484,6 +1727,7 @@ document.getElementById('password').addEventListener('keydown', (e) => {
 });
 document.getElementById('refresh-btn').onclick = loadAll;
 document.getElementById('harvest-btn').onclick = buildHarvestSheet;
+document.getElementById('client-search').oninput = (e) => { clientSearch = e.target.value; renderClients(); };
 document.getElementById('save-settings-btn').onclick = saveCompanySettings;
 document.getElementById('save-postmark-btn').onclick = savePostmark;
 document.getElementById('test-email-btn').onclick = sendTestEmail;
@@ -1492,6 +1736,7 @@ document.getElementById('export-marketing-btn').onclick = exportMarketing;
 document.getElementById('save-templates-btn').onclick = saveTemplates;
 document.getElementById('save-twilio-btn').onclick = saveTwilio;
 document.getElementById('save-maps-btn').onclick = saveMaps;
+document.getElementById('save-efactura-btn').onclick = saveEfactura;
 document.getElementById('save-notification-emails-btn').onclick = saveNotificationEmails;
 document.getElementById('save-email-templates-btn').onclick = saveEmailTemplates;
 document.getElementById('test-sms-btn').onclick = sendTestSms;
