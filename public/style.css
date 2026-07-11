@@ -1793,3 +1793,11 @@ img.image-unavailable { background: linear-gradient(135deg, #e3eee5, #f8eee0); }
   cursor: pointer;
 }
 .harvest-controls select:focus { outline: none; border-color: var(--gold); box-shadow: var(--focus-ring); }
+
+/* ------------------------------------------- emailuri per scenariu (admin) --- */
+
+.email-tpl-block { border-top: 1px solid var(--line); padding-top: 4px; margin-top: 8px; }
+.email-tpl-block:first-child { border-top: none; margin-top: 0; }
+.email-tpl-fields { padding: 4px 0 14px; }
+.email-tpl-fields.tpl-disabled { opacity: 0.45; pointer-events: none; }
+.stat-sub { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }

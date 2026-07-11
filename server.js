@@ -26,6 +26,7 @@ const {
   SETTINGS_SCHEMA,
   ORDER_STATUSES,
   CLIENT_TYPES,
+  PAYMENT_METHODS,
   PRODUCT_STOCK_STATUSES,
 } = require('./lib/seed');
 
@@ -215,17 +216,42 @@ async function notifyOwnerNewOrder(order) {
   }
 }
 
-async function notifyClientConfirmed(order) {
+// Emailuri către client pe șabloane, per scenariu (Configurare → Emailuri
+// către client). Fiecare scenariu are comutator on/off și text propriu.
+const EMAIL_SCENARIO_KIND = {
+  received: 'comanda_primita_client',
+  confirmed: 'confirmare',
+  shipping: 'in_livrare',
+  delivered: 'livrata',
+  cancelled: 'anulata',
+  paid: 'achitata',
+};
+
+async function sendScenarioEmail(order, scenario, trackingUrl) {
+  const settings = await storage.getSettings();
+  const template = (settings.emailTemplates || {})[scenario]
+    || DEFAULT_SETTINGS.emailTemplates[scenario];
+  if (!template || template.enabled !== true) return;
+  if (!order.customer.email) return;
+  const extra = { trackingUrl: trackingUrl || '' };
+  await sendEmail(settings, {
+    to: order.customer.email,
+    kind: EMAIL_SCENARIO_KIND[scenario] || scenario,
+    subject: renderSmsTemplate(template.subject, order, extra),
+    text: renderSmsTemplate(template.body, order, extra),
+  });
+}
+
+// URL absolut de urmărire, reconstruit din trackingUrl salvat pe comandă.
+function orderTrackingUrl(req, order) {
+  return order.trackingUrl ? buildNotificationTrackingUrl(req, order.trackingUrl) : '';
+}
+
+async function notifyClientConfirmed(order, trackingUrl = '') {
   const settings = await storage.getSettings();
   const body = renderSmsTemplate(settings.smsTemplates.clientConfirmed, order);
   await sendSms(settings, order.customer.phone, body, 'confirmare');
-  if (order.customer.email) {
-    const delivery = order.customer.deliveryDate
-      ? ` Livrare estimată: ${order.customer.deliveryDate.split('-').reverse().join('.')}.`
-      : '';
-    const text = `Comanda dvs. ${order.number} în valoare de ${order.total.toFixed(2)} lei a fost confirmată.${delivery} Vă mulțumim!`;
-    await sendEmail(settings, { to: order.customer.email, kind: 'confirmare', subject: `Comanda dvs. ${order.number} a fost confirmată — GranaFarm`, text });
-  }
+  await sendScenarioEmail(order, 'confirmed', trackingUrl);
 }
 
 async function notifyClientOrderReceived(order, trackingUrl) {
@@ -233,24 +259,10 @@ async function notifyClientOrderReceived(order, trackingUrl) {
   const template = settings.smsTemplates.clientOrderReceived
     || DEFAULT_SETTINGS.smsTemplates.clientOrderReceived;
   const body = renderSmsTemplate(template, order, { trackingUrl });
-  const notifications = [sendSms(settings, order.customer.phone, body, 'comanda_primita_client')];
-  if (order.customer.email) {
-    const deliveryDate = order.customer.deliveryDate
-      ? order.customer.deliveryDate.split('-').reverse().join('.')
-      : 'data selectată';
-    const text =
-      `Am primit comanda ${order.number}, în valoare de ${order.total.toFixed(2)} lei.\n\n` +
-      `Livrare: ${deliveryDate}, ${order.delivery.windowLabel || ''}.\n` +
-      `Urmăriți comanda în siguranță aici: ${trackingUrl}\n\n` +
-      'Vă mulțumim!';
-    notifications.push(sendEmail(settings, {
-      to: order.customer.email,
-      kind: 'comanda_primita_client',
-      subject: `Am primit comanda ${order.number} — GranaFarm`,
-      text,
-    }));
-  }
-  await Promise.all(notifications);
+  await Promise.all([
+    sendSms(settings, order.customer.phone, body, 'comanda_primita_client'),
+    sendScenarioEmail(order, 'received', trackingUrl),
+  ]);
 }
 
 // „Fire and forget" cu prindere de erori — notificările nu trebuie să blocheze răspunsul HTTP.
@@ -716,6 +728,7 @@ app.post('/api/orders', asyncRoute(async (req, res) => {
     total,
     delivery: deliveryData,
     trackingHash: tracking.hash,
+    trackingUrl: `/track/${tracking.token}`,
   });
   const trackingUrl = `/track/${tracking.token}`;
   const notificationTrackingUrl = buildNotificationTrackingUrl(req, trackingUrl);
@@ -941,16 +954,42 @@ app.patch('/api/admin/orders/:id', requireAdmin, asyncRoute(async (req, res) => 
     patch.total = round2(subtotal + fee - discountAmount);
   }
 
+  // Statusul de plată: null = neachitat; { method } = achitat (cash/card/transfer).
+  let becamePaid = false;
+  if (body.payment !== undefined) {
+    if (body.payment === null || body.payment === '') {
+      patch.payment = null;
+    } else {
+      const method = String(body.payment && body.payment.method || '');
+      if (!PAYMENT_METHODS.includes(method)) {
+        return res.status(400).json({ error: 'Metodă de plată invalidă (cash, card sau transfer).' });
+      }
+      patch.payment = { paid: true, method, paidAt: new Date().toISOString() };
+      becamePaid = !(existing.payment && existing.payment.paid);
+    }
+  }
+
   let order = existing;
   if (Object.keys(patch).length > 0) {
     order = await storage.updateOrder(req.params.id, patch);
     if (!order) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
   }
+  const trackingUrl = orderTrackingUrl(req, order);
+  if (becamePaid) fireAndForget(sendScenarioEmail(order, 'paid', trackingUrl));
 
   if (status !== undefined && status !== order.status) {
     const result = await storage.setOrderStatus(req.params.id, status);
     if (!result) return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
-    if (result.shouldSendConfirmation) fireAndForget(notifyClientConfirmed(result.order));
+    // emailuri per scenariu la schimbarea statusului (dacă șablonul e activ)
+    if (status === 'confirmata') {
+      if (result.shouldSendConfirmation) fireAndForget(notifyClientConfirmed(result.order, trackingUrl));
+    } else if (status === 'in_livrare') {
+      fireAndForget(sendScenarioEmail(result.order, 'shipping', trackingUrl));
+    } else if (status === 'livrata') {
+      fireAndForget(sendScenarioEmail(result.order, 'delivered', trackingUrl));
+    } else if (status === 'anulata') {
+      fireAndForget(sendScenarioEmail(result.order, 'cancelled', trackingUrl));
+    }
     order = result.order;
   }
   res.json(order);

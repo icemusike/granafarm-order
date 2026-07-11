@@ -161,7 +161,9 @@ test('ordering API keeps pricing authoritative and tracking private', async (t) 
   const database = JSON.parse(fs.readFileSync(path.join(dataDir, 'db.json'), 'utf8'));
   const storedOrder = database.orders.find((order) => order.number === created.number);
   assert.equal(storedOrder.trackingTokenHash.length, 64);
-  assert.equal(JSON.stringify(storedOrder).includes(token), false);
+  // trackingUrl se păstrează pe comandă pentru emailurile ulterioare de status
+  // (confirmată / în livrare), care includ linkul de urmărire.
+  assert.equal(storedOrder.trackingUrl, `/track/${token}`);
   assert.deepEqual(storedOrder.delivery.location, { lat: 45.7982, lng: 21.2089, formattedAddress: 'Timișoara', placeId: '' });
 
   await new Promise((resolve) => setTimeout(resolve, 100));
