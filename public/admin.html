@@ -86,6 +86,7 @@
         <p class="stats-hint" id="stats-period-hint"></p>
 
         <div class="stats" id="stats"></div>
+        <div class="stats" id="stats-extra"></div>
 
         <div class="charts-grid">
           <div class="chart-card">
@@ -97,6 +98,10 @@
             <div id="chart-revenue"></div>
           </div>
         </div>
+
+        <h2 style="margin-top:30px;">✅ Comenzi livrate și onorate</h2>
+        <p class="section-hint">Comenzile cu status „Livrată" din intervalul selectat mai sus.</p>
+        <div id="delivered-table"></div>
       </section>
 
       <!-- ===================================================== Produse === -->
@@ -271,6 +276,19 @@
           <div id="marketing-msg"></div>
           <div class="actions">
             <button class="btn btn-primary" id="save-notification-emails-btn">Salvează adresele de notificare</button>
+          </div>
+        </div>
+
+        <div class="card settings-card">
+          <h3>✉️ Emailuri către client — per scenariu</h3>
+          <p class="settings-desc">Fiecare scenariu are propriul email (subiect + mesaj) și un comutator de activare. Emailurile de „Primită", „Confirmată" și „În livrare" pot include linkul de urmărire a comenzii prin token-ul <code>{trackingUrl}</code>.</p>
+          <div class="token-legend">
+            <code>{number}</code><code>{name}</code><code>{company}</code><code>{total}</code><code>{city}</code><code>{phone}</code><code>{deliveryDate}</code><code>{trackingUrl}</code>
+          </div>
+          <div id="email-templates"></div>
+          <div id="email-tpl-msg"></div>
+          <div class="actions">
+            <button class="btn btn-primary" id="save-email-templates-btn">Salvează emailurile</button>
           </div>
         </div>
 

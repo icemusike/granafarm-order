@@ -16,6 +16,8 @@ const TYPE_LABELS = {
   altul: 'Altul',
 };
 
+const PAYMENT_LABELS = { cash: 'Cash', card: 'Card', transfer: 'Transfer bancar' };
+
 const RANGE_OPTIONS = [
   { key: 'last7', label: 'Ultimele 7 zile' },
   { key: 'today', label: 'Azi' },
@@ -192,6 +194,79 @@ function renderStatsCards(stats) {
     <div class="stat"><div class="icon">💰</div><div><div class="label">Valoare în perioadă</div><div class="value">${money(stats.totalRevenue)}</div></div></div>
     <div class="stat accent-amber"><div class="icon">📥</div><div><div class="label">Comenzi azi</div><div class="value">${stats.ordersToday}</div></div></div>
     <div class="stat accent-plum"><div class="icon">⏰</div><div><div class="label">Comenzi scadente</div><div class="value">${stats.ordersDue}</div></div></div>`;
+  renderStatsExtras(stats);
+  renderDeliveredTable(stats);
+}
+
+// comenzile din intervalul statistic curent (după data plasării)
+function ordersInRange(stats) {
+  return orders.filter((o) => {
+    const day = o.createdAt.slice(0, 10);
+    return day >= stats.from && day <= stats.to;
+  });
+}
+
+function renderStatsExtras(stats) {
+  const money = (v) => `${v.toFixed(2).replace('.', ',')}<span class="stat-unit"> lei</span>`;
+  const inRange = ordersInRange(stats);
+  const active = inRange.filter((o) => o.status !== 'anulata');
+
+  // total vânzări = valoarea comenzilor livrate
+  const delivered = active.filter((o) => o.status === 'livrata');
+  const deliveredRevenue = delivered.reduce((s, o) => s + o.total, 0);
+
+  // comenzi achitate
+  const paid = active.filter((o) => o.payment && o.payment.paid);
+  const paidRevenue = paid.reduce((s, o) => s + o.total, 0);
+
+  // cea mai mare comandă
+  const biggest = active.reduce((best, o) => (!best || o.total > best.total ? o : best), null);
+
+  // cel mai mare client (grupat pe telefon, cu numele afișat)
+  const byClient = new Map();
+  for (const o of active) {
+    const key = (o.customer.phone || o.customer.name).replace(/\s/g, '');
+    const entry = byClient.get(key) || { name: o.customer.company || o.customer.name, total: 0, count: 0 };
+    entry.total += o.total;
+    entry.count += 1;
+    byClient.set(key, entry);
+  }
+  const topClient = [...byClient.values()].sort((a, b) => b.total - a.total)[0] || null;
+
+  document.getElementById('stats-extra').innerHTML = `
+    <div class="stat"><div class="icon">✅</div><div><div class="label">Total vânzări (livrate)</div><div class="value">${money(deliveredRevenue)}</div><div class="stat-sub">${delivered.length} ${delivered.length === 1 ? 'comandă livrată' : 'comenzi livrate'}</div></div></div>
+    <div class="stat accent-blue"><div class="icon">💳</div><div><div class="label">Comenzi achitate</div><div class="value">${money(paidRevenue)}</div><div class="stat-sub">${paid.length} din ${active.length} comenzi</div></div></div>
+    <div class="stat accent-amber"><div class="icon">🏆</div><div><div class="label">Cea mai mare comandă</div><div class="value">${biggest ? money(biggest.total) : '—'}</div><div class="stat-sub">${biggest ? `${esc(biggest.number)} · ${esc(biggest.customer.company || biggest.customer.name)}` : 'fără comenzi în interval'}</div></div></div>
+    <div class="stat accent-plum"><div class="icon">👑</div><div><div class="label">Cel mai mare client</div><div class="value">${topClient ? money(topClient.total) : '—'}</div><div class="stat-sub">${topClient ? `${esc(topClient.name)} · ${topClient.count} ${topClient.count === 1 ? 'comandă' : 'comenzi'}` : 'fără comenzi în interval'}</div></div></div>`;
+}
+
+function renderDeliveredTable(stats) {
+  const el = document.getElementById('delivered-table');
+  const delivered = ordersInRange(stats)
+    .filter((o) => o.status === 'livrata')
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  if (delivered.length === 0) {
+    el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Nicio comandă livrată în intervalul selectat.</div>';
+    return;
+  }
+  const totalValue = delivered.reduce((s, o) => s + o.total, 0);
+  el.innerHTML = `
+    <div class="table-wrap card" style="padding:0;">
+      <table class="admin">
+        <thead><tr><th>Comanda</th><th>Client</th><th>Plasată</th><th>Livrare</th><th class="num">Total</th><th>Plată</th></tr></thead>
+        <tbody>
+          ${delivered.map((o) => `<tr>
+            <td><b>${esc(o.number)}</b></td>
+            <td>${esc(o.customer.company || o.customer.name)}</td>
+            <td style="white-space:nowrap;">${new Date(o.createdAt).toLocaleDateString('ro-RO', { dateStyle: 'medium' })}</td>
+            <td style="white-space:nowrap;">${orderDeliveryDate(o) ? new Date(orderDeliveryDate(o) + 'T00:00:00').toLocaleDateString('ro-RO', { dateStyle: 'medium' }) : '—'}</td>
+            <td class="num"><b>${lei(o.total)}</b></td>
+            <td>${o.payment && o.payment.paid ? `<span class="badge badge-livrata">💰 ${PAYMENT_LABELS[o.payment.method] || 'Achitat'}</span>` : '<span class="badge badge-noua">Neachitat</span>'}</td>
+          </tr>`).join('')}
+          <tr><td colspan="4" style="font-weight:700;">Total livrat în interval</td><td class="num" style="font-weight:700;">${lei(totalValue)}</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>`;
 }
 
 function renderCharts(stats) {
@@ -306,9 +381,14 @@ function orderBodyHtml(o) {
           ${o.customer.marketingOptIn ? `<div class="detail-line">📣 Abonat la oferte prin email</div>` : ''}
         </div>
         <div class="status-row">
-          <b>Schimbă statusul:</b>
+          <b>Status:</b>
           <select data-status>
             ${Object.entries(STATUS_LABELS).map(([v, l]) => `<option value="${v}" ${o.status === v ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>
+          <b>Plată:</b>
+          <select data-payment>
+            <option value="">Neachitat</option>
+            ${Object.entries(PAYMENT_LABELS).map(([v, l]) => `<option value="${v}" ${o.payment && o.payment.paid && o.payment.method === v ? 'selected' : ''}>Achitat — ${l}</option>`).join('')}
           </select>
           <span style="flex:1"></span>
           <button class="btn-small save" data-print-label>🏷️ Etichetă livrare</button>
@@ -398,6 +478,7 @@ function renderOrders() {
         </div>
         <div class="right">
           <span class="total">${lei(o.total)}</span>
+          ${o.payment && o.payment.paid ? `<span class="badge badge-livrata">💰 ${PAYMENT_LABELS[o.payment.method] || 'Achitat'}</span>` : ''}
           <span class="badge badge-${o.status}">${STATUS_LABELS[o.status]}</span>
           <span class="chev">▼</span>
         </div>
@@ -430,6 +511,23 @@ function renderOrders() {
         // confirmarea poate genera un SMS/email către client
         api('/api/admin/sms-log').then((r) => r.json()).then((d) => { smsInfo = d; renderSmsLog(); });
         api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
+      }
+    };
+
+    const paymentSelect = card.querySelector('[data-payment]');
+    if (paymentSelect) paymentSelect.onchange = async (e) => {
+      const method = e.target.value;
+      const res = await api(`/api/admin/orders/${o.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ payment: method ? { method } : null }),
+      });
+      if (res.ok) {
+        Object.assign(o, await res.json());
+        renderOrders();
+        if (statsLoadedOnce && !document.getElementById('section-statistici').classList.contains('hidden')) loadStats();
+        api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
+      } else {
+        alert((await res.json()).error || 'Salvarea plății a eșuat.');
       }
     };
 
@@ -972,7 +1070,16 @@ function openInvoice(inv) {
 
 // --- jurnal SMS / email ------------------------------------------------------------------
 
-const SMS_KIND_LABELS = { comanda_noua: 'Comandă nouă → proprietar', confirmare: 'Confirmare → client', test: 'Test' };
+const SMS_KIND_LABELS = {
+  comanda_noua: 'Comandă nouă → proprietar',
+  comanda_primita_client: 'Comandă primită → client',
+  confirmare: 'Confirmare → client',
+  in_livrare: 'În livrare → client',
+  livrata: 'Livrată → client',
+  anulata: 'Anulată → client',
+  achitata: 'Achitată → client',
+  test: 'Test',
+};
 const STATUS_BADGE = { trimis: 'badge-livrata', simulat: 'badge-confirmata', eroare: 'badge-anulata' };
 
 function renderSmsLog() {
@@ -1080,6 +1187,8 @@ function renderSettings() {
 
   document.getElementById('s-notificationEmails').value = settings.notificationEmails || '';
 
+  renderEmailTemplates();
+
   // Precompletăm destinatarii testelor cu datele proprietarului (doar dacă sunt goi,
   // ca să nu suprascriem ce a scris utilizatorul).
   const teEl = document.getElementById('test-email-to');
@@ -1159,6 +1268,62 @@ async function saveMaps() {
     const res = await fetch('/api/ordering-config', { cache: 'no-store' });
     if (res.ok) { orderingConfig = await res.json(); renderSettings(); }
   } catch { /* pastila se actualizează la următoarea încărcare */ }
+}
+
+// --- emailuri către client, per scenariu -----------------------------------
+
+const EMAIL_SCENARIOS = [
+  ['received', '📥 Comandă primită', 'Trimis automat imediat ce clientul plasează comanda.'],
+  ['confirmed', '✅ Comandă confirmată', 'Trimis când confirmați comanda (o singură dată).'],
+  ['shipping', '🚚 În livrare', 'Trimis când treceți comanda în „În livrare".'],
+  ['delivered', '📬 Livrată', 'Trimis când marcați comanda ca livrată.'],
+  ['cancelled', '❌ Anulată', 'Trimis când anulați comanda.'],
+  ['paid', '💰 Achitată', 'Trimis când marcați comanda ca achitată.'],
+];
+
+function renderEmailTemplates() {
+  const et = settings.emailTemplates || {};
+  document.getElementById('email-templates').innerHTML = EMAIL_SCENARIOS.map(([key, title, hint]) => {
+    const tpl = et[key] || {};
+    return `
+    <div class="email-tpl-block">
+      <div class="switch-row">
+        <div>
+          <div class="switch-label">${title}</div>
+          <div class="switch-hint">${hint}</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="etpl-${key}-enabled" ${tpl.enabled ? 'checked' : ''}><span class="slider"></span></label>
+      </div>
+      <div class="email-tpl-fields ${tpl.enabled ? '' : 'tpl-disabled'}" id="etpl-${key}-fields">
+        <div class="field">
+          <label for="etpl-${key}-subject">Subiect</label>
+          <input id="etpl-${key}-subject" type="text" value="${esc(tpl.subject || '')}">
+        </div>
+        <div class="field" style="margin-top:10px;">
+          <label for="etpl-${key}-body">Mesaj</label>
+          <textarea id="etpl-${key}-body" class="template-input" rows="4">${esc(tpl.body || '')}</textarea>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  EMAIL_SCENARIOS.forEach(([key]) => {
+    document.getElementById(`etpl-${key}-enabled`).onchange = (e) => {
+      document.getElementById(`etpl-${key}-fields`).classList.toggle('tpl-disabled', !e.target.checked);
+    };
+  });
+}
+
+async function saveEmailTemplates() {
+  const emailTemplates = {};
+  EMAIL_SCENARIOS.forEach(([key]) => {
+    emailTemplates[key] = {
+      enabled: document.getElementById(`etpl-${key}-enabled`).checked,
+      subject: document.getElementById(`etpl-${key}-subject`).value,
+      body: document.getElementById(`etpl-${key}-body`).value,
+    };
+  });
+  await saveSettingsPatch({ emailTemplates }, 'email-tpl-msg', 'Emailurile către client au fost salvate.');
 }
 
 async function saveNotificationEmails() {
@@ -1328,6 +1493,7 @@ document.getElementById('save-templates-btn').onclick = saveTemplates;
 document.getElementById('save-twilio-btn').onclick = saveTwilio;
 document.getElementById('save-maps-btn').onclick = saveMaps;
 document.getElementById('save-notification-emails-btn').onclick = saveNotificationEmails;
+document.getElementById('save-email-templates-btn').onclick = saveEmailTemplates;
 document.getElementById('test-sms-btn').onclick = sendTestSms;
 document.getElementById('add-product-btn').onclick = () => {
   document.getElementById('products-body').appendChild(
