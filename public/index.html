@@ -6,6 +6,9 @@
   <meta name="description" content="Comandă produse GranaFarm proaspete, direct de la fermă.">
   <title>GranaFarm | Comandă produse proaspete</title>
   <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#388E3C">
+  <link rel="apple-touch-icon" href="/favicon.png">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body class="customer-page">
@@ -267,5 +270,9 @@
   </footer>
 
   <script src="/app.js"></script>
+  <script>
+    // instalare ca aplicație (PWA)
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+  </script>
 </body>
 </html>

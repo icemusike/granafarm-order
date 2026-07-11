@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Administrare comenzi | GranaFarm</title>
   <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="manifest" href="/manifest-admin.webmanifest">
+  <meta name="theme-color" content="#22302A">
+  <link rel="apple-touch-icon" href="/favicon.png">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -402,5 +405,9 @@
   <footer class="site">GranaFarm, panou de administrare</footer>
 
   <script src="/admin.js"></script>
+  <script>
+    // instalare ca aplicație (PWA); panoul nu se pune în cache (vezi sw.js)
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+  </script>
 </body>
 </html>
