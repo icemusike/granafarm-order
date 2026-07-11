@@ -422,14 +422,21 @@
               <input id="ef-clientSecret" type="text" placeholder="din portalul ANAF">
             </div>
             <div class="field full">
-              <label for="ef-accessToken">Token de acces SPV (JWT)</label>
-              <textarea id="ef-accessToken" class="template-input" rows="2" placeholder="se obține cu certificatul digital calificat, conform documentației ANAF"></textarea>
+              <label for="ef-redirectUri">Callback URL (identic cu cel înregistrat în portalul ANAF)</label>
+              <input id="ef-redirectUri" type="text">
+            </div>
+            <div class="field full">
+              <label for="ef-accessToken">Token de acces SPV (JWT), completat automat la autorizare</label>
+              <textarea id="ef-accessToken" class="template-input" rows="2" placeholder="se completează automat după „Autorizează cu ANAF"; se poate lipi și manual"></textarea>
             </div>
           </div>
-          <p class="settings-desc" style="margin-top:12px;">Pași la activare: 1) înregistrați aplicația în <a href="https://logincert.anaf.ro" target="_blank" rel="noopener">portalul ANAF</a> cu certificatul digital calificat; 2) obțineți token-ul OAuth și lipiți-l mai sus; 3) testați întâi pe mediul <b>Test</b>; 4) porniți comutatorul.</p>
+          <div class="efactura-token-status" id="ef-token-status"></div>
+          <p class="settings-desc" style="margin-top:12px;">Pași: 1) lipiți <b>Client ID</b> și <b>Client Secret</b> din portalul ANAF și apăsați „Salvează"; 2) verificați că <b>Callback URL</b> de mai sus e identic cu cel înregistrat la ANAF; 3) apăsați <b>„Autorizează cu ANAF"</b> pe calculatorul unde e instalat certificatul digital calificat, semnați, iar token-ul se salvează singur; 4) apăsați <b>„Verifică conexiunea"</b> pe mediul <b>Test</b>; 5) abia apoi porniți comutatorul și, când sunteți gata de real, treceți pe Producție. Token-ul se reîmprospătează automat înainte să expire.</p>
           <div id="efactura-msg"></div>
           <div class="actions">
             <button class="btn btn-primary" id="save-efactura-btn">Salvează configurarea e-Factura</button>
+            <button class="btn btn-ghost" id="ef-authorize-btn">🔗 Autorizează cu ANAF (certificat digital)</button>
+            <button class="btn btn-ghost" id="ef-verify-btn">📡 Verifică conexiunea</button>
           </div>
         </div>
 

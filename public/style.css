@@ -538,6 +538,15 @@ h2 .step {
 }
 .client-unpaid > b { color: var(--danger); display: block; margin-bottom: 4px; }
 
+.efactura-token-status {
+  background: var(--light-gray);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-top: 14px;
+  font-size: 0.9rem;
+}
+
 .chip {
   border: 1px solid var(--line);
   background: var(--card);
