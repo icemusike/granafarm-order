@@ -41,6 +41,30 @@ const VARIETIES = [
     tags: ['Sos & pizza', 'Passata', 'Roșii confiate'] },
 ];
 
+// Legumele din seră, prezentate ca și soiurile de roșii — cu fotografii reale.
+const VEGGIES = [
+  { name: 'Ardei capia', origin: 'Legume din seră', size: 'Dulce · cărnos', img: '/images/products/ardei_capia.png',
+    lead: 'Ardei alungit, roșu intens, cu pulpă groasă și dulce. Copt pe flacără sau grătar își dezvăluie toată aroma — vedeta zacuștilor și a salatelor de ardei copți.',
+    taste: 'Dulce, intens, fără iuțeală', texture: 'Pulpă groasă, cărnoasă, coajă care se decojește ușor',
+    tags: ['Ardei copți', 'Zacuscă', 'Salate'] },
+  { name: 'Ardei gras alb', origin: 'Legume din seră', size: 'Crocant · versatil', img: '/images/products/ardei_gras_alb.png',
+    lead: 'Ardei gras alb-gălbui, crocant și suculent, cu gust blând. La fel de bun proaspăt în salate, umplut la cuptor sau călit în mâncăruri.',
+    taste: 'Blând, proaspăt, ușor dulceag', texture: 'Crocantă, suculentă, pereți groși',
+    tags: ['Salate', 'Ardei umpluți', 'Gătit'] },
+  { name: 'Ardei gogoșari', origin: 'Legume din seră', size: 'Dulce · aromat', img: '/images/products/gogosar_rosu.png',
+    lead: 'Gogoșari roșii, rotunzi și zemoși, cu aromă dulce inconfundabilă. Clasicul murăturilor românești și al salatelor de toamnă.',
+    taste: 'Dulce, aromat, ușor picant la coadă', texture: 'Cărnoasă, densă, perfectă pentru murat',
+    tags: ['Murături', 'Salate', 'Conserve'] },
+  { name: 'Castraveți cornișon', origin: 'Legume din seră', size: 'Mici · crocanți', img: '/images/products/castraveti_cornison.png',
+    lead: 'Castraveți mici, fermi și crocanți, culeși la dimensiunea perfectă. Ideali pentru murat la borcan, dar la fel de buni proaspeți, în salate.',
+    taste: 'Proaspăt, verde, fără amăreală', texture: 'Crocantă, fermă, semințe mici',
+    tags: ['Murături', 'Salate', 'Gustări'] },
+  { name: 'Vinete de grădină', origin: 'Legume din seră', size: 'Coapte pe rând', img: '/images/products/vinete_de_gradina.png',
+    lead: 'Vinete lucioase, cu pulpă albă și cremoasă, fără gust amar. Coapte pe jar dau salata de vinete de altădată; excelente și la grătar sau în ghiveci.',
+    taste: 'Blând, cremos, fără amăreală', texture: 'Pulpă fină, mătăsoasă după coacere',
+    tags: ['Salată de vinete', 'Grătar', 'Ghiveci'] },
+];
+
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // grila de ansamblu (4 · privire de ansamblu)
@@ -53,11 +77,13 @@ document.getElementById('ov-grid').innerHTML = VARIETIES.map((v) => `
     </div>
   </div>`).join('');
 
-// secțiunile de soi (5..13)
-document.getElementById('varieties').innerHTML = VARIETIES.map((v) => `
+// blocurile de prezentare — folosite atât pentru soiuri de roșii, cât și
+// pentru legume
+function varietySectionsHtml(list, altPrefix) {
+  return list.map((v) => `
   <section class="variety">
     <div class="variety-in">
-      <div class="variety-visual"><img class="variety-photo" src="${esc(v.img)}" alt="Roșii ${esc(v.name)}" loading="lazy"></div>
+      <div class="variety-visual"><img class="variety-photo" src="${esc(v.img)}" alt="${esc(altPrefix)} ${esc(v.name)}" loading="lazy"></div>
       <div class="variety-body">
         <div class="kicker">${esc(v.origin)} · ${esc(v.size)}</div>
         <h2>${esc(v.name)}</h2>
@@ -70,3 +96,10 @@ document.getElementById('varieties').innerHTML = VARIETIES.map((v) => `
       </div>
     </div>
   </section>`).join('');
+}
+
+// secțiunile de soi (5..13)
+document.getElementById('varieties').innerHTML = varietySectionsHtml(VARIETIES, 'Roșii');
+
+// legumele din seră
+document.getElementById('veggies').innerHTML = varietySectionsHtml(VEGGIES, '');
