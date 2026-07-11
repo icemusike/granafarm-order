@@ -63,6 +63,18 @@ const VEGGIES = [
     lead: 'Vinete lucioase, cu pulpă albă și cremoasă, fără gust amar. Coapte pe jar dau salata de vinete de altădată; excelente și la grătar sau în ghiveci.',
     taste: 'Blând, cremos, fără amăreală', texture: 'Pulpă fină, mătăsoasă după coacere',
     tags: ['Salată de vinete', 'Grătar', 'Ghiveci'] },
+  { name: 'Fasole verde lată', origin: 'Legume din grădină', size: 'Fragedă · fără ață', img: '/images/products/fasole_verde_lata.png',
+    lead: 'Păstăi late, galbene-untoase, culese tinere — fragede și fără ață. Baza mâncării de fasole scăzute, dar la fel de bune ca garnitură cu usturoi.',
+    taste: 'Dulceag, fin, gust de unt', texture: 'Fragedă, se topește la gătit',
+    tags: ['Mâncare de fasole', 'Garnituri', 'Salate calde'] },
+  { name: 'Ceapă verde', origin: 'Legume din grădină', size: 'Legături proaspete', img: '/images/products/ceapa_verde.png',
+    lead: 'Legături de ceapă verde crocantă, cu bulb alb și frunze fragede. Nelipsită lângă brânză și roșii, în salate sau presărată peste orice mâncare.',
+    taste: 'Proaspăt, ușor iute, aromat', texture: 'Crocantă, suculentă',
+    tags: ['Salate', 'Garnituri', 'Mic dejun'] },
+  { name: 'Cartofi roz', origin: 'Legume din grădină', size: 'Coajă subțire', img: '/images/products/cartofi_roz.png',
+    lead: 'Cartofi cu coajă roz-trandafirie și miez gălbui, fermi la fiert. Nu se sfărâmă — perfecți pentru salate, cartofi noi cu mărar sau la cuptor.',
+    taste: 'Plin, ușor dulceag', texture: 'Fermă la fiert, cremoasă la copt',
+    tags: ['Salate de cartofi', 'La cuptor', 'Garnituri'] },
 ];
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
