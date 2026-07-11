@@ -1419,10 +1419,17 @@ app.post('/api/admin/efactura/authorize-url', requireAdmin, asyncRoute(async (re
 // Pasul 2: ANAF redirecționează aici cu ?code=...&state=... după semnarea
 // cu certificatul. Ruta e publică (redirect de browser), protejată prin
 // state-ul de unică folosință; schimbăm codul pe token și îl salvăm.
+// Erorile standard OAuth primite de la ANAF, traduse în explicații utile.
+const EFACTURA_OAUTH_ERROR_HINTS = {
+  access_denied: 'ANAF a refuzat autorizarea (access_denied). Verificați: 1) token-ul cu certificatul digital e conectat și a apărut fereastra de selecție a certificatului (cu PIN corect); 2) certificatul e înregistrat în SPV pentru firmă; 3) serviciul E-Factura e bifat pe aplicația OAuth din portalul ANAF. Testați întâi logarea directă în SPV din același browser.',
+  invalid_request: 'ANAF a respins cererea (invalid_request): verificați că Callback URL de aici e identic cu cel înregistrat în portalul ANAF.',
+  unauthorized_client: 'ANAF nu recunoaște aplicația (unauthorized_client): verificați Client ID și că aplicația e activă în portalul ANAF.',
+};
+
 app.get('/api/admin/efactura/callback', asyncRoute(async (req, res) => {
-  const fail = (reason) => res.redirect('/admin?efactura=eroare&motiv=' + encodeURIComponent(String(reason).slice(0, 200)) + '#integrari');
+  const fail = (reason) => res.redirect('/admin?efactura=eroare&motiv=' + encodeURIComponent(String(reason).slice(0, 500)) + '#integrari');
   const { code, state, error } = req.query || {};
-  if (error) return fail(error);
+  if (error) return fail(EFACTURA_OAUTH_ERROR_HINTS[String(error)] || error);
   if (!code) return fail('ANAF nu a trimis codul de autorizare');
   pruneEfacturaStates();
   const createdAt = efacturaOAuthStates.get(String(state || ''));
