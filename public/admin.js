@@ -1,4 +1,4 @@
-/* GranaFarm — panou de administrare */
+/* GranaFarm, panou de administrare */
 
 const STATUS_LABELS = {
   noua: 'Nouă',
@@ -236,8 +236,8 @@ function renderStatsExtras(stats) {
   document.getElementById('stats-extra').innerHTML = `
     <div class="stat"><div class="icon">✅</div><div><div class="label">Total vânzări (livrate)</div><div class="value">${money(deliveredRevenue)}</div><div class="stat-sub">${delivered.length} ${delivered.length === 1 ? 'comandă livrată' : 'comenzi livrate'}</div></div></div>
     <div class="stat accent-blue"><div class="icon">💳</div><div><div class="label">Comenzi achitate</div><div class="value">${money(paidRevenue)}</div><div class="stat-sub">${paid.length} din ${active.length} comenzi</div></div></div>
-    <div class="stat accent-amber"><div class="icon">🏆</div><div><div class="label">Cea mai mare comandă</div><div class="value">${biggest ? money(biggest.total) : '—'}</div><div class="stat-sub">${biggest ? `${esc(biggest.number)} · ${esc(biggest.customer.company || biggest.customer.name)}` : 'fără comenzi în interval'}</div></div></div>
-    <div class="stat accent-plum"><div class="icon">👑</div><div><div class="label">Cel mai mare client</div><div class="value">${topClient ? money(topClient.total) : '—'}</div><div class="stat-sub">${topClient ? `${esc(topClient.name)} · ${topClient.count} ${topClient.count === 1 ? 'comandă' : 'comenzi'}` : 'fără comenzi în interval'}</div></div></div>`;
+    <div class="stat accent-amber"><div class="icon">🏆</div><div><div class="label">Cea mai mare comandă</div><div class="value">${biggest ? money(biggest.total) : '-'}</div><div class="stat-sub">${biggest ? `${esc(biggest.number)} · ${esc(biggest.customer.company || biggest.customer.name)}` : 'fără comenzi în interval'}</div></div></div>
+    <div class="stat accent-plum"><div class="icon">👑</div><div><div class="label">Cel mai mare client</div><div class="value">${topClient ? money(topClient.total) : '-'}</div><div class="stat-sub">${topClient ? `${esc(topClient.name)} · ${topClient.count} ${topClient.count === 1 ? 'comandă' : 'comenzi'}` : 'fără comenzi în interval'}</div></div></div>`;
 }
 
 function renderDeliveredTable(stats) {
@@ -259,7 +259,7 @@ function renderDeliveredTable(stats) {
             <td><b>${esc(o.number)}</b></td>
             <td>${esc(o.customer.company || o.customer.name)}</td>
             <td style="white-space:nowrap;">${new Date(o.createdAt).toLocaleDateString('ro-RO', { dateStyle: 'medium' })}</td>
-            <td style="white-space:nowrap;">${orderDeliveryDate(o) ? new Date(orderDeliveryDate(o) + 'T00:00:00').toLocaleDateString('ro-RO', { dateStyle: 'medium' }) : '—'}</td>
+            <td style="white-space:nowrap;">${orderDeliveryDate(o) ? new Date(orderDeliveryDate(o) + 'T00:00:00').toLocaleDateString('ro-RO', { dateStyle: 'medium' }) : '-'}</td>
             <td class="num"><b>${lei(o.total)}</b></td>
             <td>${o.payment && o.payment.paid ? `<span class="badge badge-livrata">💰 ${PAYMENT_LABELS[o.payment.method] || 'Achitat'}</span>` : '<span class="badge badge-noua">Neachitat</span>'}</td>
           </tr>`).join('')}
@@ -287,7 +287,7 @@ function fmtCompact(v) {
   return (v % 1 === 0 ? String(v) : v.toFixed(0));
 }
 
-// Grafic cu bare din HTML/CSS — text crisp, gridlines, tooltip la hover.
+// Grafic cu bare din HTML/CSS, text crisp, gridlines, tooltip la hover.
 function buildBarChart(series, { valueKey, kind, format }) {
   if (!series || series.length === 0) return '<div class="chart-empty">Fără date pentru acest interval.</div>';
 
@@ -388,7 +388,7 @@ function orderBodyHtml(o) {
           <b>Plată:</b>
           <select data-payment>
             <option value="">Neachitat</option>
-            ${Object.entries(PAYMENT_LABELS).map(([v, l]) => `<option value="${v}" ${o.payment && o.payment.paid && o.payment.method === v ? 'selected' : ''}>Achitat — ${l}</option>`).join('')}
+            ${Object.entries(PAYMENT_LABELS).map(([v, l]) => `<option value="${v}" ${o.payment && o.payment.paid && o.payment.method === v ? 'selected' : ''}>Achitat: ${l}</option>`).join('')}
           </select>
           <span style="flex:1"></span>
           <button class="btn-small save" data-print-label>🏷️ Etichetă livrare</button>
@@ -473,7 +473,7 @@ function renderOrders() {
     card.innerHTML = `
       <div class="order-head">
         <div class="who">
-          <span class="name">${esc(o.number)} — ${esc(o.customer.name)}${company}</span>
+          <span class="name">${esc(o.number)} · ${esc(o.customer.name)}${company}</span>
           <span class="meta">${TYPE_LABELS[o.customer.type] || 'Altul'} · ${date} · ${esc(o.customer.city)}</span>
         </div>
         <div class="right">
@@ -706,7 +706,7 @@ const NE_QUALIFIERS = [
   [/caise/i, 'खुर्पानी'], [/căpșuni|capsuni/i, 'स्ट्रबेरी'], [/zmeură|zmeura/i, 'रास्बेरी'],
 ];
 
-// „Roșii De Grădină" -> „गोलभेडा — De Grădină"; produsele necunoscute rămân
+// „Roșii De Grădină" -> „गोलभेडा (De Grădină)"; produsele necunoscute rămân
 // doar cu numele românesc.
 function neProductName(name) {
   const hit = NE_PRODUCTS.find(([re]) => re.test(name));
@@ -718,7 +718,7 @@ function neProductName(name) {
   }
   // soiurile de roșii păstrează numele soiului în original
   const variety = name.match(/^Ro[șs]ii\s+(.+)$/i);
-  if (variety && hit[1] === 'गोलभेडा') ne = `गोलभेडा — ${variety[1]}`;
+  if (variety && hit[1] === 'गोलभेडा') ne = `गोलभेडा (${variety[1]})`;
   return ne;
 }
 const neUnit = (unit) => NE_UNITS[unit] || unit;
@@ -776,12 +776,12 @@ function buildHarvestSheet() {
 
   const perOrder = dayOrders.map((o) => `
     <div class="order-block">
-      <div class="order-title">${esc(o.number)} — ${esc(o.customer.name)}${o.customer.company ? ' · ' + esc(o.customer.company) : ''}
+      <div class="order-title">${esc(o.number)} · ${esc(o.customer.name)}${o.customer.company ? ' · ' + esc(o.customer.company) : ''}
         <span class="order-meta">${esc(o.customer.city)}${o.delivery?.windowLabel ? ' · ' + esc(o.delivery.windowLabel) : ''} · ${STATUS_LABELS[o.status]}</span></div>
       <table><tbody>${o.items.map((i) => `<tr><td>${productCell(i.name)}</td><td class="num">${qtyCell(i.qty, i.unit)}</td></tr>`).join('')}</tbody></table>
     </div>`).join('');
 
-  printWindow(`Fișă de cules — ${dateLabel}`, `
+  printWindow(`Fișă de cules ${dateLabel}`, `
     <h1>🌱 ${bi('Fișă de cules', 'टिप्ने सूची')}</h1>
     <p class="sub">${bi('Livrare', 'डेलिभरी मिति')}: <b>${esc(dateLabel)}</b> · ${dayOrders.length} ${dayOrders.length === 1 ? 'comandă' : 'comenzi'}${bilingual ? ` <span class="ne-inline">· ${dayOrders.length} अर्डर</span>` : ''} · generată ${new Date().toLocaleString('ro-RO', { dateStyle: 'short', timeStyle: 'short' })}</p>
     <h2>${bi('Total de cules (toate comenzile)', 'जम्मा टिप्नुपर्ने (सबै अर्डरहरू)')}</h2>
@@ -859,7 +859,7 @@ async function printDeliveryLabel(o) {
         ${qr ? `<div class="qr"><img src="${qr}" alt="Cod QR livrare"><div class="hint">Scanează cu telefonul: detalii pachet + navigație către adresă</div></div>` : ''}
       </div>
       <div class="label-items">
-        <h3>Conținut pachet — ${o.items.length} ${o.items.length === 1 ? 'produs' : 'produse'}</h3>
+        <h3>Conținut pachet: ${o.items.length} ${o.items.length === 1 ? 'produs' : 'produse'}</h3>
         <table><tbody>${itemsRows}</tbody></table>
       </div>
       ${o.customer.notes ? `<div class="notes">📝 ${esc(o.customer.notes)}</div>` : ''}
@@ -1102,7 +1102,7 @@ function renderSmsLog() {
             <td style="white-space:nowrap;">${new Date(s.at).toLocaleString('ro-RO', { dateStyle: 'short', timeStyle: 'short' })}</td>
             <td style="white-space:nowrap;">${esc(s.to)}</td>
             <td>${SMS_KIND_LABELS[s.kind] || esc(s.kind)}</td>
-            <td><span class="badge ${STATUS_BADGE[s.status] || ''}">${esc(s.status)}${s.error ? ' — ' + esc(s.error) : ''}</span></td>
+            <td><span class="badge ${STATUS_BADGE[s.status] || ''}">${esc(s.status)}${s.error ? ': ' + esc(s.error) : ''}</span></td>
             <td style="max-width:420px;">${esc(s.body)}</td>
           </tr>`).join('')}
         </tbody>
@@ -1130,7 +1130,7 @@ function renderEmailLog() {
             <td style="white-space:nowrap;">${new Date(s.at).toLocaleString('ro-RO', { dateStyle: 'short', timeStyle: 'short' })}</td>
             <td style="white-space:nowrap;">${esc(s.to)}</td>
             <td>${SMS_KIND_LABELS[s.kind] || esc(s.kind)}</td>
-            <td><span class="badge ${STATUS_BADGE[s.status] || ''}">${esc(s.status)}${s.error ? ' — ' + esc(s.error) : ''}</span></td>
+            <td><span class="badge ${STATUS_BADGE[s.status] || ''}">${esc(s.status)}${s.error ? ': ' + esc(s.error) : ''}</span></td>
             <td style="max-width:420px;">${esc(s.subject)}</td>
           </tr>`).join('')}
         </tbody>
@@ -1179,7 +1179,7 @@ function renderSettings() {
         ? 'SMS-urile sunt <b>active</b>, folosind datele Twilio completate mai jos.'
         : 'SMS-urile sunt <b>active</b>, folosind variabilele de mediu Twilio setate pe host.')
       : (tw.enabled === true
-        ? 'Comutatorul este pornit, dar SMS-urile rulează în <b>mod simulat</b> — completați datele Twilio pentru trimitere reală.'
+        ? 'Comutatorul este pornit, dar SMS-urile rulează în <b>mod simulat</b>, completați datele Twilio pentru trimitere reală.'
         : 'SMS-urile sunt <b>dezactivate</b> (mod simulat, doar în jurnal). Porniți comutatorul de mai jos după aprobarea numărului de expeditor.');
 
   document.getElementById('gm-apiKey').value = (settings.maps || {}).apiKey || '';
@@ -1263,7 +1263,7 @@ async function saveMaps() {
     { maps: { apiKey: document.getElementById('gm-apiKey').value.trim() } },
     'maps-msg', 'Cheia Google Maps a fost salvată.'
   );
-  // pastila de status depinde de configurația publică — o reîmprospătăm
+  // pastila de status depinde de configurația publică, o reîmprospătăm
   try {
     const res = await fetch('/api/ordering-config', { cache: 'no-store' });
     if (res.ok) { orderingConfig = await res.json(); renderSettings(); }
@@ -1420,7 +1420,7 @@ function productRow(p) {
   const units = UNITS.includes(p.unit) || !p.unit ? UNITS : [p.unit, ...UNITS];
   tr.innerHTML = `
     <td><input type="text" value="${esc(p.name)}" data-name></td>
-    <td><input type="text" value="${esc(p.description || '')}" data-description placeholder="ex: Soi românesc — mari"></td>
+    <td><input type="text" value="${esc(p.description || '')}" data-description placeholder="ex: Soi românesc, mari"></td>
     <td><input type="text" value="${esc(p.category || '')}" data-category list="cat-list" placeholder="ex: Legume" style="min-width:110px;"></td>
     <td><select data-unit>
       ${units.map((u) => `<option ${p.unit === u ? 'selected' : ''}>${u}</option>`).join('')}

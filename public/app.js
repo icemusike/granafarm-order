@@ -1,4 +1,4 @@
-/* GranaFarm — fluxul de comandă pentru clienți */
+/* GranaFarm, fluxul de comandă pentru clienți */
 
 const CART_KEY = 'granafarm-cart-v2';
 const PROFILE_KEY = 'granafarm-customer-profile';
@@ -121,7 +121,7 @@ function expectedDeliveryText(product) {
   return value || 'Livrare conform intervalului ales';
 }
 
-// Fotografii reale per produs — trebuie ținute în sincron cu
+// Fotografii reale per produs, trebuie ținute în sincron cu
 // VARIETY_IMAGES din lib/seed.js.
 const TOMATO_IMAGES = [
   [/inima de albagena/, '/images/products/inima_de_albagena.png'],
@@ -336,7 +336,7 @@ function productCard(product, index) {
   return `
     <article class="product${quantity ? ' selected' : ''}${disabled ? ' unavailable' : ''}" data-product-id="${esc(id)}" style="--card-delay:${Math.min(index * 25, 250)}ms">
       <div class="product-photo-wrap">
-        <img class="product-photo" data-product-image src="${esc(safeImageUrl(product))}" data-fallback="${esc(fallback)}" alt="${esc(product.name)} — produs GranaFarm" loading="lazy" width="420" height="280">
+        <img class="product-photo" data-product-image src="${esc(safeImageUrl(product))}" data-fallback="${esc(fallback)}" alt="${esc(product.name)}, produs GranaFarm" loading="lazy" width="420" height="280">
         <span class="stock-badge stock-${stock.tone}">${esc(stock.label)}</span>
       </div>
       <div class="product-body">
@@ -443,7 +443,7 @@ function updateTotals() {
   const fee = deliveryFee(zone, amount);
   const total = amount + (fee || 0);
   $('cart-subtotal').textContent = money(amount);
-  $('cart-delivery-fee').textContent = fee === null ? '—' : fee === 0 ? 'Gratuită' : money(fee);
+  $('cart-delivery-fee').textContent = fee === null ? '-' : fee === 0 ? 'Gratuită' : money(fee);
   $('cart-total').textContent = money(total);
   $('cart-zone-hint').textContent = zoneMessage(zone, amount);
 
@@ -465,7 +465,7 @@ function renderCheckoutSummary() {
     <div class="checkout-line"><span>${esc(product.name)} <small>${quantityText(qty)} ${esc(product.unit)}</small></span><strong>${money(asNumber(product.price) * qty)}</strong></div>
   `).join('');
   $('checkout-subtotal').textContent = money(amount);
-  $('checkout-fee').textContent = fee === null ? '—' : fee === 0 ? 'Gratuită' : money(fee);
+  $('checkout-fee').textContent = fee === null ? '-' : fee === 0 ? 'Gratuită' : money(fee);
   $('checkout-total').textContent = money(amount + (fee || 0));
   const zone = selectedZone();
   const minOrder = Math.max(0, asNumber(zone?.minOrder));
@@ -558,7 +558,7 @@ function businessFieldsRequired() {
 function updateBusinessFields() {
   const visible = businessFieldsRequired();
   $('business-fields').classList.toggle('hidden', !visible);
-  // Denumirea firmei este întotdeauna opțională — factura se poate emite și
+  // Denumirea firmei este întotdeauna opțională, factura se poate emite și
   // pe numele persoanei de contact.
   $('c-company').required = false;
   $('cui-optional').textContent = $('c-invoice').checked ? '*' : 'opțional';
@@ -1031,7 +1031,7 @@ function setupMapSearch() {
           state.map.setZoom(17);
           placeDeliveryMarker(point, false);
           setDeliveryLocation({ ...point, formattedAddress: place.formatted_address || '', placeId: place.place_id || '' });
-          $('delivery-map-status').textContent = 'Pinul a fost plasat pe adresa căutată — îl poți muta dacă e nevoie.';
+          $('delivery-map-status').textContent = 'Pinul a fost plasat pe adresa căutată, îl poți muta dacă e nevoie.';
         }
       });
     } catch {
@@ -1190,7 +1190,7 @@ function normalizeConfig(config) {
   const zones = Array.isArray(config?.deliveryZones) && config.deliveryZones.length ? config.deliveryZones : [fallbackZone];
   const windows = Array.isArray(config?.deliveryWindows) && config.deliveryWindows.length
     ? config.deliveryWindows
-    : [{ id: 'dimineata', label: 'Dimineața — confirmăm ora' }];
+    : [{ id: 'dimineata', label: 'Dimineața (confirmăm ora)' }];
   return {
     deliveryZones: zones,
     deliveryWindows: windows,

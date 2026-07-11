@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Catalogul GranaFarm — nouă soiuri de roșii cultivate în serele de sticlă, direct din fermă.">
-  <title>Catalog roșii — GranaFarm</title>
+  <meta name="description" content="Catalogul GranaFarm: soiuri de roșii, legume proaspete, fructe de sezon, bulion și murături, direct din sera noastră.">
+  <title>Catalog produse | GranaFarm</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <style>
     @import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap");
@@ -48,6 +48,27 @@
     .topbar .brand { display:flex; align-items:center; gap:10px; }
     .topbar .brand img { height:28px; }
     .topbar .brand span { font-family:var(--font-mono); font-size:11px; letter-spacing:var(--tracking-caps); text-transform:uppercase; color:var(--stone-600); }
+
+    /* navigația pe secțiuni */
+    html { scroll-behavior:smooth; }
+    .topnav { max-width:1180px; margin:0 auto; padding:0 24px 10px; display:flex; gap:8px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .topnav a {
+      flex:none; display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 16px;
+      border-radius:999px; border:1px solid var(--border-subtle); background:var(--cream-000);
+      color:var(--green-800); font-size:13.5px; font-weight:600; text-decoration:none; white-space:nowrap;
+      transition:background .14s var(--ease-out), color .14s var(--ease-out);
+    }
+    .topnav a:hover { background:var(--green-600); color:#fff; border-color:var(--green-600); }
+    [id] { scroll-margin-top: 104px; }
+
+    /* buton de comandă (CTA) */
+    .order-cta {
+      display:inline-flex; align-items:center; gap:10px; height:50px; padding:0 28px; border-radius:999px;
+      background:var(--amber-400); color:var(--green-900) !important; font-weight:700; font-size:16px;
+      text-decoration:none; align-self:flex-start; transition:background .14s var(--ease-out);
+    }
+    .order-cta:hover { background:var(--amber-500); }
+    .section-cta { display:flex; justify-content:center; padding:8px 24px 56px; background:var(--cream-050); }
 
     section { padding:0; }
     .wrap { max-width:1180px; margin:0 auto; padding:76px 24px; }
@@ -139,6 +160,8 @@
     .more-card h3 { font-size:21px; }
     .more-card p { font-size:14px; color:var(--text-body); margin:0; }
     .more-note { font-size:14.5px; color:var(--text-muted); max-width:44em; margin:32px 0 0; }
+    .more-order { display:inline-flex; align-items:center; gap:6px; font-size:14px; font-weight:700; color:var(--green-700); text-decoration:none; margin-top:2px; }
+    .more-order:hover { color:var(--green-900); }
 
     /* ---- 16 · contact ---- */
     .contact { background:var(--surface-dark); text-align:center; }
@@ -173,12 +196,19 @@
   </style>
 </head>
 <body>
-  <!-- bară superioară · întoarcere la comandă -->
+  <!-- bară superioară · navigație + întoarcere la comandă -->
   <div class="topbar">
     <div class="topbar-in">
-      <a class="brand" href="/"><img src="/logo.png" alt="GranaFarm"><span>Catalog de soiuri</span></a>
+      <a class="brand" href="/"><img src="/logo.png" alt="GranaFarm"><span>Catalog produse</span></a>
       <a class="back-btn" href="/">← Înapoi la comandă</a>
     </div>
+    <nav class="topnav" aria-label="Secțiunile catalogului">
+      <a href="#rosii">🍅 Roșii</a>
+      <a href="#legume">🫑 Legume</a>
+      <a href="#fructe">🍓 Fructe</a>
+      <a href="#bulion">🥫 Bulion</a>
+      <a href="#muraturi">🫙 Murături</a>
+    </nav>
   </div>
 
   <!-- 1 · copertă -->
@@ -186,12 +216,13 @@
     <div class="cover-in">
       <div class="cover-text">
         <img class="cover-logo" src="/logo.png" alt="GranaFarm">
-        <div class="kicker">Catalog de soiuri · 2026</div>
-        <h1>Roșiile noastre</h1>
-        <p>Nouă soiuri de roșii cultivate cu grijă în serele de sticlă GranaFarm — gust autentic, direct din fermă.</p>
+        <div class="kicker">Catalog produse · 2026</div>
+        <h1>Produsele noastre</h1>
+        <p>Nouă soiuri de roșii, legume proaspete, fructe de sezon, bulion și murături din cămara fermei. Totul cultivat cu grijă în serele GranaFarm și livrat direct la tine.</p>
+        <a class="order-cta" href="/">🛒 Comandă acum</a>
         <div class="place">Sat Cavarani · Caraș-Severin<br>Comandă online: <a href="/">comenzi.granafarm.ro</a></div>
       </div>
-      <div class="cover-photo"><img src="/images/products/tomatoes.webp" alt="Soiuri de roșii GranaFarm"></div>
+      <div class="cover-photo"><img src="/images/products/tomatoes.webp" alt="Produse GranaFarm"></div>
     </div>
   </section>
 
@@ -202,11 +233,11 @@
       <div class="greenhouse-text">
         <div class="eyebrow">Din sera noastră</div>
         <h2>Crescute cu grijă, culese la maturitate</h2>
-        <p>Fiecare roșie se coace natural pe vrej, în serele noastre de sticlă, și este culeasă doar când a ajuns la gustul potrivit — nu mai devreme.</p>
+        <p>Fiecare roșie se coace natural pe vrej, în serele noastre de sticlă, și este culeasă doar când a ajuns la gustul potrivit, nu mai devreme.</p>
         <div class="points">
-          <div class="point"><span class="n">01</span><span>Seră de sticlă — mediu controlat, curat, producție constantă tot anul</span></div>
-          <div class="point"><span class="n">02</span><span>Coacere naturală pe vrej — aroma se formează în plantă, nu în depozit</span></div>
-          <div class="point"><span class="n">03</span><span>Cules manual, la maturitate deplină — fermitate și gust intacte</span></div>
+          <div class="point"><span class="n">01</span><span>Seră de sticlă, mediu controlat, curat, producție constantă tot anul</span></div>
+          <div class="point"><span class="n">02</span><span>Coacere naturală pe vrej, aroma se formează în plantă, nu în depozit</span></div>
+          <div class="point"><span class="n">03</span><span>Cules manual, la maturitate deplină, fermitate și gust intacte</span></div>
         </div>
       </div>
     </div>
@@ -217,14 +248,14 @@
     <div class="eyebrow">De ce GranaFarm</div>
     <h2>Partenerul tău de prospețime</h2>
     <div class="grid">
-      <div class="promo"><div class="big">24h</div><h3>Culese la livrare</h3><p>Roșiile sunt culese în aceeași zi sau cu o zi înainte de livrare — ajung la tine cu gustul și fermitatea intacte.</p></div>
-      <div class="promo"><div class="big">0 lei</div><h3>Transport gratuit</h3><p>Livrăm gratuit direct la locația ta — restaurant, pizzerie sau bistro — fără costuri ascunse.</p></div>
+      <div class="promo"><div class="big">24h</div><h3>Culese la livrare</h3><p>Roșiile sunt culese în aceeași zi sau cu o zi înainte de livrare, ajung la tine cu gustul și fermitatea intacte.</p></div>
+      <div class="promo"><div class="big">0 lei</div><h3>Transport gratuit</h3><p>Livrăm gratuit direct la locația ta, restaurant, pizzerie sau bistro, fără costuri ascunse.</p></div>
       <div class="promo"><div class="big">9</div><h3>Soiuri, direct din fermă</h3><p>Fără intermediari: lucrezi direct cu producătorul și alegi soiul potrivit pentru fiecare preparat.</p></div>
     </div>
   </div></section>
 
   <!-- 4 · privire de ansamblu -->
-  <section class="overview"><div class="wrap">
+  <section class="overview" id="rosii"><div class="wrap">
     <div class="ov-head">
       <div>
         <div class="eyebrow">Catalogul de soiuri</div>
@@ -238,12 +269,16 @@
   <!-- 5..13 · soiuri (injectate) -->
   <div id="varieties"></div>
 
+  <div class="section-cta"><a class="order-cta" href="/">🛒 Comandă roșii acum</a></div>
+
   <!-- legume din seră (injectate) -->
-  <section class="overview"><div class="wrap" style="padding-bottom:0;">
+  <section class="overview" id="legume"><div class="wrap" style="padding-bottom:0;">
     <div class="eyebrow">Din grădină</div>
     <h2 style="font-size:clamp(30px,4vw,44px);">Legumele noastre</h2>
   </div></section>
   <div id="veggies"></div>
+
+  <div class="section-cta"><a class="order-cta" href="/">🛒 Comandă legume acum</a></div>
 
   <!-- 14 · ghid -->
   <section class="guide"><div class="wrap">
@@ -262,11 +297,11 @@
     <div class="eyebrow">Disponibile la comandă</div>
     <h2>Și mai mult din grădina noastră</h2>
     <div class="grid">
-      <div class="more-card"><div class="thumb"><img src="/images/products/fruit.webp" alt="Fructe de sezon"></div><h3>Fructe de sezon</h3><p>Căpșuni și zmeură, culese în ziua livrării.</p></div>
-      <div class="more-card"><div class="thumb"><img src="/images/products/preserves.webp" alt="Din cămara fermei"></div><h3>Din cămara fermei</h3><p>Bulion, pastă de roșii, dulceață de zmeură, caise și căpșuni, sirop de zmeură.</p></div>
-      <div class="more-card"><div class="thumb"><img src="/images/products/pickles.webp" alt="Murături"></div><h3>Murături</h3><p>Castraveți murați cu sare (natural), varză murată, ardei umpluți cu varză.</p></div>
+      <div class="more-card" id="fructe"><div class="thumb"><img src="/images/products/fruit.webp" alt="Fructe de sezon"></div><h3>Fructe de sezon</h3><p>Căpșuni și zmeură, culese în ziua livrării.</p><a class="more-order" href="/">Comandă acum →</a></div>
+      <div class="more-card" id="bulion"><div class="thumb"><img src="/images/products/preserves.webp" alt="Bulion și conserve"></div><h3>Bulion și cămara fermei</h3><p>Bulion, pastă de roșii, dulceață de zmeură, caise și căpșuni, sirop de zmeură.</p><a class="more-order" href="/">Comandă acum →</a></div>
+      <div class="more-card" id="muraturi"><div class="thumb"><img src="/images/products/pickles.webp" alt="Murături"></div><h3>Murături</h3><p>Castraveți murați cu sare (natural), varză murată, ardei umpluți cu varză.</p><a class="more-order" href="/">Comandă acum →</a></div>
     </div>
-    <p class="more-note">Toate se livrează în aceleași condiții de prospețime ca roșiile — direct din fermă, fără intermediari.</p>
+    <p class="more-note">Toate se livrează în aceleași condiții de prospețime ca roșiile, direct din fermă, fără intermediari.</p>
   </div></section>
 
   <!-- 16 · contact -->
