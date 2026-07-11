@@ -121,9 +121,9 @@ function expectedDeliveryText(product) {
   return value || 'Livrare conform intervalului ales';
 }
 
-// Fotografii reale per soi de roșii — trebuie ținute în sincron cu
+// Fotografii reale per produs — trebuie ținute în sincron cu
 // VARIETY_IMAGES din lib/seed.js.
-const VARIETY_IMAGES = [
+const TOMATO_IMAGES = [
   [/inima de albagena/, '/images/products/inima_de_albagena.png'],
   [/inima de bou/, '/images/products/inima_de_bou.png'],
   [/de gradina/, '/images/products/de_gradina.png'],
@@ -135,14 +135,25 @@ const VARIETY_IMAGES = [
   [/\broma\b/, '/images/products/roma.png'],
   [/cherry/, '/images/products/cherry.png'],
 ];
+const VEGGIE_IMAGES = [
+  [/ardei capia/, '/images/products/ardei_capia.png'],
+  [/ardei alb/, '/images/products/ardei_gras_alb.png'],
+  [/gogosar/, '/images/products/gogosar_rosu.png'],
+  [/castraveti cornison/, '/images/products/castraveti_cornison.png'],
+  [/vinete/, '/images/products/vinete_de_gradina.png'],
+];
 
 function categoryImage(product) {
   const haystack = normalizeText(`${product.category || ''} ${product.name || ''}`);
+  const nameOnly = normalizeText(product.name || '');
   if (/rosii|tomate/.test(haystack)) {
-    const nameOnly = normalizeText(product.name || '');
-    const variety = VARIETY_IMAGES.find(([re]) => re.test(nameOnly));
+    const variety = TOMATO_IMAGES.find(([re]) => re.test(nameOnly));
     if (variety) return variety[1];
     return '/images/products/tomatoes.webp';
+  }
+  if (/legume/.test(haystack)) {
+    const veggie = VEGGIE_IMAGES.find(([re]) => re.test(nameOnly));
+    if (veggie) return veggie[1];
   }
   if (/dulceata|gem|magiun/.test(haystack)) return '/images/products/jams.webp';
   if (/muratur|castraveti murati|gogosari/.test(haystack)) return '/images/products/pickles.webp';
