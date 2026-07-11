@@ -35,6 +35,7 @@
     <div id="dashboard-section" class="hidden">
       <nav class="admin-nav" id="admin-nav">
         <button class="nav-tab" data-section="comenzi">📋 Comenzi <span class="badge-count hidden" id="nav-orders-count"></span></button>
+        <button class="nav-tab" data-section="clienti">👥 Clienți</button>
         <button class="nav-tab" data-section="statistici">📊 Statistici</button>
         <button class="nav-tab" data-section="produse">🥕 Produse</button>
         <button class="nav-tab" data-section="facturi">🧾 Facturi</button>
@@ -64,6 +65,17 @@
         </div>
 
         <div id="orders"></div>
+      </section>
+
+      <!-- ==================================================== Clienți === -->
+      <section class="admin-section hidden" id="section-clienti">
+        <h2>👥 Clienți</h2>
+        <p class="section-hint">Fișele clienților se construiesc automat din comenzile plasate (grupate după numărul de telefon): istoric, totaluri, produse preferate și restanțe (comenzi livrate, dar neachitate). Notițele interne se păstrează pe client.</p>
+        <div class="toolbar client-toolbar">
+          <input type="search" id="client-search" placeholder="🔍 Caută după nume, firmă, telefon sau localitate...">
+          <span class="client-count" id="client-count"></span>
+        </div>
+        <div id="clients"></div>
       </section>
 
       <!-- ================================================= Statistici === -->

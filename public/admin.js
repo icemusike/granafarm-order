@@ -43,7 +43,11 @@ let activeRange = 'last7';
 let customFrom = '';
 let customTo = '';
 let statsLoadedOnce = false;
+let clients = [];
+let clientsLoadedOnce = false;
+let clientSearch = '';
 const expanded = new Set();
+const clientExpanded = new Set();
 
 const lei = (v) => v.toFixed(2).replace('.', ',') + ' lei';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -129,7 +133,7 @@ async function loadAll() {
 
 // --- navigare / rutare ---------------------------------------------------------
 
-const SECTIONS = ['comenzi', 'statistici', 'produse', 'facturi', 'configurare', 'integrari'];
+const SECTIONS = ['comenzi', 'clienti', 'statistici', 'produse', 'facturi', 'configurare', 'integrari'];
 
 function showSection(name) {
   if (!SECTIONS.includes(name)) name = 'comenzi';
@@ -139,6 +143,10 @@ function showSection(name) {
   if (name === 'statistici' && !statsLoadedOnce) {
     statsLoadedOnce = true;
     loadStats();
+  }
+  if (name === 'clienti' && !clientsLoadedOnce) {
+    clientsLoadedOnce = true;
+    loadClients();
   }
 }
 
@@ -507,6 +515,7 @@ function renderOrders() {
         renderNavBadge();
         renderFilter();
         renderOrders();
+        invalidateClients();
         if (statsLoadedOnce && !document.getElementById('section-statistici').classList.contains('hidden')) loadStats();
         // confirmarea poate genera un SMS/email către client
         api('/api/admin/sms-log').then((r) => r.json()).then((d) => { smsInfo = d; renderSmsLog(); });
@@ -524,6 +533,7 @@ function renderOrders() {
       if (res.ok) {
         Object.assign(o, await res.json());
         renderOrders();
+        invalidateClients();
         if (statsLoadedOnce && !document.getElementById('section-statistici').classList.contains('hidden')) loadStats();
         api('/api/admin/email-log').then((r) => r.json()).then((d) => { emailInfo = d; renderEmailLog(); });
       } else {
@@ -565,6 +575,7 @@ function renderOrders() {
       renderFilter();
       renderOrders();
       renderInvoices();
+      invalidateClients();
       if (statsLoadedOnce) loadStats();
     };
 
@@ -633,6 +644,7 @@ function renderOrders() {
           editingOrderId = null;
           renderFilter();
           renderOrders();
+          invalidateClients();
           if (statsLoadedOnce) loadStats();
         } finally {
           btn.disabled = false;
@@ -936,6 +948,157 @@ async function renderAdminMap(element, location) {
     new maps.Marker({ map, position: point });
   } catch {
     element.replaceWith(document.createTextNode('Harta nu a putut fi încărcată.'));
+  }
+}
+
+// --- clienți (CRM) ---------------------------------------------------------
+// Fișele se agregă pe server din comenzile plasate (grupate după telefon).
+
+// Comenzile s-au schimbat, deci fișele de client trebuie reîncărcate: imediat
+// dacă secțiunea e vizibilă, altfel la următoarea deschidere a tab-ului.
+function invalidateClients() {
+  if (!clientsLoadedOnce) return;
+  if (!document.getElementById('section-clienti').classList.contains('hidden')) loadClients();
+  else clientsLoadedOnce = false;
+}
+
+async function loadClients() {
+  const el = document.getElementById('clients');
+  el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Se încarcă clienții...</div>';
+  const res = await api('/api/admin/clients');
+  if (!res.ok) {
+    el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Clienții nu au putut fi încărcați.</div>';
+    return;
+  }
+  clients = await res.json();
+  renderClients();
+}
+
+function clientMatchesSearch(c, needle) {
+  if (!needle) return true;
+  const haystack = [c.name, c.company, c.phone, c.city, c.email]
+    .join(' ')
+    .toLowerCase();
+  return needle.split(/\s+/).every((word) => haystack.includes(word));
+}
+
+const roDateTime = (iso) => new Date(iso).toLocaleDateString('ro-RO', { dateStyle: 'medium' });
+
+function clientBodyHtml(c) {
+  const history = c.orders.map((o) => `<tr>
+      <td><b>${esc(o.number)}</b></td>
+      <td style="white-space:nowrap;">${roDateTime(o.createdAt)}</td>
+      <td style="white-space:nowrap;">${o.deliveryDate ? ro(o.deliveryDate) : '-'}</td>
+      <td><span class="badge badge-${o.status}">${STATUS_LABELS[o.status] || esc(o.status)}</span></td>
+      <td>${o.paid ? `<span class="badge badge-livrata">💰 ${PAYMENT_LABELS[o.paymentMethod] || 'Achitat'}</span>` : '<span class="badge badge-noua">Neachitat</span>'}</td>
+      <td class="num"><b>${lei(o.total)}</b></td>
+    </tr>`).join('');
+
+  const favorites = c.favoriteProducts.length
+    ? c.favoriteProducts.map((p) => `<div class="detail-line">🥇 <b>${esc(p.name)}</b>: ${p.qty % 1 === 0 ? p.qty : String(p.qty).replace('.', ',')} ${esc(p.unit)} în ${p.times} ${p.times === 1 ? 'comandă' : 'comenzi'}</div>`).join('')
+    : '<div class="detail-line" style="color:var(--muted);">Fără produse încă.</div>';
+
+  const unpaid = c.unpaidOrders.length
+    ? `<div class="client-unpaid">
+        <b>⚠️ Restanțe: ${lei(c.unpaidTotal)}</b>
+        ${c.unpaidOrders.map((u) => `<div class="detail-line">${esc(u.number)}${u.deliveryDate ? ` · livrată ${ro(u.deliveryDate)}` : ''} · <b>${lei(u.total)}</b></div>`).join('')}
+      </div>`
+    : '';
+
+  return `
+        <div>
+          <h4>Contact și acțiuni rapide</h4>
+          <div class="detail-line"><b>Telefon:</b> <a href="tel:${esc(String(c.phone).replace(/\s/g, ''))}">${esc(c.phone)}</a></div>
+          ${c.email ? `<div class="detail-line"><b>Email:</b> <a href="mailto:${esc(c.email)}">${esc(c.email)}</a></div>` : ''}
+          ${c.company ? `<div class="detail-line"><b>Firmă:</b> ${esc(c.company)}${c.cui ? ` · CUI ${esc(c.cui)}` : ''}</div>` : ''}
+          <div class="detail-line"><b>Adresă:</b> ${esc(c.address)}, ${esc(c.city)}</div>
+          <div class="detail-line"><b>Client din:</b> ${roDateTime(c.firstOrderAt)} · <b>Ultima comandă:</b> ${roDateTime(c.lastOrderAt)}</div>
+          ${unpaid}
+          <h4 style="margin-top:14px;">Produse preferate</h4>
+          ${favorites}
+          <h4 style="margin-top:14px;">📝 Notițe interne</h4>
+          <textarea data-client-notes rows="3" class="template-input" placeholder="ex: preferă livrarea dimineața, plătește prin transfer...">${esc(c.notes || '')}</textarea>
+          <div data-client-notes-msg></div>
+          <div class="actions" style="margin-top:8px;">
+            <button class="btn-small save" data-save-client-notes>💾 Salvează notițele</button>
+          </div>
+        </div>
+        <div>
+          <h4>Istoric comenzi (${c.orders.length})</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Comanda</th><th>Plasată</th><th>Livrare</th><th>Status</th><th>Plată</th><th class="num">Total</th></tr></thead>
+              <tbody>${history}</tbody>
+            </table>
+          </div>
+        </div>`;
+}
+
+function renderClients() {
+  const el = document.getElementById('clients');
+  const needle = clientSearch.trim().toLowerCase();
+  const list = clients.filter((c) => clientMatchesSearch(c, needle));
+  document.getElementById('client-count').textContent =
+    `${list.length} ${list.length === 1 ? 'client' : 'clienți'}${needle ? ` (din ${clients.length})` : ''}`;
+
+  if (list.length === 0) {
+    el.innerHTML = `<div class="card" style="text-align:center; color: var(--muted);">${needle ? 'Niciun client nu corespunde căutării.' : 'Încă nu există clienți. Fișele apar automat după prima comandă.'}</div>`;
+    return;
+  }
+
+  el.innerHTML = '';
+  for (const c of list) {
+    const card = document.createElement('div');
+    card.className = 'order-card' + (clientExpanded.has(c.key) ? ' open' : '');
+    const company = c.company ? ` · ${esc(c.company)}` : '';
+    card.innerHTML = `
+      <div class="order-head">
+        <div class="who">
+          <span class="name">${esc(c.name)}${company}</span>
+          <span class="meta">${TYPE_LABELS[c.type] || 'Altul'} · ${esc(c.city)} · ${esc(c.phone)} · ${c.ordersCount} ${c.ordersCount === 1 ? 'comandă' : 'comenzi'}</span>
+        </div>
+        <div class="right">
+          <span class="total">${lei(c.totalSpent)}</span>
+          ${c.unpaidTotal > 0 ? `<span class="badge badge-anulata">Restanțe ${lei(c.unpaidTotal)}</span>` : ''}
+          ${c.notes ? '<span class="badge badge-confirmata">📝 notițe</span>' : ''}
+          <span class="chev">▼</span>
+        </div>
+      </div>
+      <div class="order-body ${clientExpanded.has(c.key) ? '' : 'hidden'}">
+        ${clientBodyHtml(c)}
+      </div>`;
+
+    card.querySelector('.order-head').onclick = () => {
+      if (clientExpanded.has(c.key)) clientExpanded.delete(c.key);
+      else clientExpanded.add(c.key);
+      renderClients();
+    };
+
+    const saveBtn = card.querySelector('[data-save-client-notes]');
+    if (saveBtn) saveBtn.onclick = async (e) => {
+      e.stopPropagation();
+      const notes = card.querySelector('[data-client-notes]').value;
+      const msg = card.querySelector('[data-client-notes-msg]');
+      saveBtn.disabled = true;
+      try {
+        const res = await api(`/api/admin/clients/${encodeURIComponent(c.key)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ notes }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          msg.innerHTML = `<div class="msg msg-error">${esc(data.error || 'Salvarea a eșuat.')}</div>`;
+          return;
+        }
+        c.notes = data.notes;
+        msg.innerHTML = '<div class="msg msg-success">Notițele au fost salvate.</div>';
+        setTimeout(() => { msg.innerHTML = ''; }, 3000);
+      } finally {
+        saveBtn.disabled = false;
+      }
+    };
+
+    el.appendChild(card);
   }
 }
 
@@ -1484,6 +1647,7 @@ document.getElementById('password').addEventListener('keydown', (e) => {
 });
 document.getElementById('refresh-btn').onclick = loadAll;
 document.getElementById('harvest-btn').onclick = buildHarvestSheet;
+document.getElementById('client-search').oninput = (e) => { clientSearch = e.target.value; renderClients(); };
 document.getElementById('save-settings-btn').onclick = saveCompanySettings;
 document.getElementById('save-postmark-btn').onclick = savePostmark;
 document.getElementById('test-email-btn').onclick = sendTestEmail;

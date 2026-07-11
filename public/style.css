@@ -514,6 +514,30 @@ h2 .step {
 
 .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; align-items: center; }
 
+/* Clienți (CRM) */
+.client-toolbar input[type="search"] {
+  flex: 1;
+  min-width: 220px;
+  max-width: 420px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 11px 14px;
+  font-size: 0.92rem;
+  font-family: var(--font-body);
+  background: var(--card);
+}
+.client-toolbar input[type="search"]:focus { outline: 2px solid var(--green-light); border-color: var(--green); }
+.client-count { color: var(--muted); font-size: 0.88rem; font-weight: 600; }
+.client-unpaid {
+  background: #fdecea;
+  border: 1px solid #f5c6c0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-top: 12px;
+  font-size: 0.92rem;
+}
+.client-unpaid > b { color: var(--danger); display: block; margin-bottom: 4px; }
+
 .chip {
   border: 1px solid var(--line);
   background: var(--card);

@@ -995,6 +995,107 @@ app.patch('/api/admin/orders/:id', requireAdmin, asyncRoute(async (req, res) => 
   res.json(order);
 }));
 
+// --- Clienți (CRM) -----------------------------------------------------------
+// Profilurile se agregă din comenzile existente, grupate după telefonul
+// normalizat; notițele interne se păstrează separat, în tabela de clienți.
+
+const CLIENT_KEY_RE = /^\+\d{6,20}$/;
+
+function aggregateClients(orders, clientData) {
+  const map = new Map();
+  const chronological = [...orders].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  for (const order of chronological) {
+    const key = order.customer && order.customer.phone ? normalizePhone(order.customer.phone) : '';
+    if (!CLIENT_KEY_RE.test(key)) continue;
+    let client = map.get(key);
+    if (!client) {
+      client = {
+        key,
+        ordersCount: 0,
+        cancelledCount: 0,
+        totalSpent: 0,
+        deliveredTotal: 0,
+        unpaidOrders: [],
+        orders: [],
+        productTotals: new Map(),
+        firstOrderAt: order.createdAt,
+      };
+      map.set(key, client);
+    }
+    // datele de contact cele mai recente câștigă (parcurgem cronologic)
+    client.phone = order.customer.phone;
+    client.name = order.customer.name;
+    client.company = order.customer.company || '';
+    client.cui = order.customer.cui || '';
+    client.email = order.customer.email || '';
+    client.city = order.customer.city || '';
+    client.address = order.customer.address || '';
+    client.type = order.customer.type || 'altul';
+    client.lastOrderAt = order.createdAt;
+    client.orders.push({
+      id: order.id,
+      number: order.number,
+      createdAt: order.createdAt,
+      deliveryDate: (order.delivery && order.delivery.date) || order.customer.deliveryDate || '',
+      total: Number(order.total),
+      status: order.status,
+      paid: Boolean(order.payment && order.payment.paid),
+      paymentMethod: order.payment && order.payment.paid ? order.payment.method : '',
+      invoiceNumber: order.invoiceNumber || '',
+    });
+    if (order.status === 'anulata') {
+      client.cancelledCount += 1;
+      continue;
+    }
+    client.ordersCount += 1;
+    client.totalSpent = round2(client.totalSpent + Number(order.total));
+    if (order.status === 'livrata') {
+      client.deliveredTotal = round2(client.deliveredTotal + Number(order.total));
+      // restanță = livrată, dar neachitată
+      if (!(order.payment && order.payment.paid)) {
+        client.unpaidOrders.push({
+          number: order.number,
+          total: Number(order.total),
+          deliveryDate: (order.delivery && order.delivery.date) || order.customer.deliveryDate || '',
+        });
+      }
+    }
+    for (const item of order.items || []) {
+      const itemKey = `${item.name}|${item.unit}`;
+      const entry = client.productTotals.get(itemKey) || { name: item.name, unit: item.unit, qty: 0, times: 0 };
+      entry.qty = round2(entry.qty + Number(item.qty));
+      entry.times += 1;
+      client.productTotals.set(itemKey, entry);
+    }
+  }
+  return [...map.values()].map((client) => {
+    const { productTotals, ...rest } = client;
+    const stored = clientData[client.key] || {};
+    return {
+      ...rest,
+      orders: [...client.orders].reverse(),
+      favoriteProducts: [...productTotals.values()].sort((a, b) => b.qty - a.qty).slice(0, 3),
+      unpaidTotal: round2(client.unpaidOrders.reduce((sum, entry) => sum + entry.total, 0)),
+      notes: typeof stored.notes === 'string' ? stored.notes : '',
+    };
+  }).sort((a, b) => b.totalSpent - a.totalSpent);
+}
+
+app.get('/api/admin/clients', requireAdmin, asyncRoute(async (req, res) => {
+  const [orders, clientData] = await Promise.all([storage.listOrders(), storage.listClientData()]);
+  res.json(aggregateClients(orders, clientData));
+}));
+
+app.patch('/api/admin/clients/:key', requireAdmin, asyncRoute(async (req, res) => {
+  const key = String(req.params.key || '');
+  if (!CLIENT_KEY_RE.test(key)) return res.status(400).json({ error: 'Identificatorul clientului nu este valid.' });
+  const body = req.body || {};
+  if (typeof body.notes !== 'string') return res.status(400).json({ error: 'Notițele trebuie să fie text.' });
+  if (body.notes.length > 4000) return res.status(400).json({ error: 'Notițele pot avea cel mult 4000 de caractere.' });
+  const saved = await storage.saveClientData(key, { notes: body.notes.trim() });
+  res.json({ key, notes: saved.notes || '' });
+}));
+
 app.delete('/api/admin/orders/:id', requireAdmin, asyncRoute(async (req, res) => {
   // Șterge definitiv comanda și facturile emise pentru ea (comenzi de test).
   const ok = await storage.deleteOrder(req.params.id);
