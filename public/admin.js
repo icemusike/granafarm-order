@@ -1104,16 +1104,26 @@ function renderClients() {
 
 // --- facturi -------------------------------------------------------------------
 
+// Starea e-Factura a unei facturi: netrimisă implicit; trimisă / eroare
+// după o încercare de trimitere în SPV.
+function efacturaBadge(inv) {
+  const ef = inv.efactura;
+  if (ef && ef.status === 'trimisa') return `<span class="badge badge-livrata" title="index ${esc(ef.uploadIndex || '')}">SPV: trimisă</span>`;
+  if (ef && ef.status === 'eroare') return `<span class="badge badge-anulata" title="${esc(ef.error || '')}">SPV: eroare</span>`;
+  return '<span class="badge badge-noua">SPV: netrimisă</span>';
+}
+
 function renderInvoices() {
   const el = document.getElementById('invoices');
   if (invoices.length === 0) {
     el.innerHTML = '<div class="card" style="text-align:center; color: var(--muted);">Nu a fost emisă nicio factură încă.</div>';
     return;
   }
+  const efEnabled = (settings.efactura || {}).enabled === true;
   el.innerHTML = `
     <div class="table-wrap card" style="padding:0;">
       <table class="admin">
-        <thead><tr><th>Factura</th><th>Data</th><th>Client</th><th>Comanda</th><th class="num">Total</th><th>Acțiuni</th></tr></thead>
+        <thead><tr><th>Factura</th><th>Data</th><th>Client</th><th>Comanda</th><th class="num">Total</th><th>e-Factura</th><th>Acțiuni</th></tr></thead>
         <tbody>
           ${invoices.map((inv) => `<tr>
             <td><b>${esc(inv.number)}</b></td>
@@ -1121,13 +1131,54 @@ function renderInvoices() {
             <td>${esc(inv.buyer.name)}</td>
             <td>${esc(inv.orderNumber)}</td>
             <td class="num"><b>${lei(inv.total)}</b></td>
-            <td><button class="btn-small save" data-inv="${inv.id}">Vezi / Printează</button></td>
+            <td>${efacturaBadge(inv)}</td>
+            <td style="white-space:nowrap;">
+              <button class="btn-small save" data-inv="${inv.id}">Vezi / Printează</button>
+              <button class="btn-small" data-efactura-xml="${inv.id}" title="Descarcă XML-ul UBL (CIUS-RO) pentru verificare">⬇️ XML</button>
+              ${efEnabled && !(inv.efactura && inv.efactura.status === 'trimisa') ? `<button class="btn-small save" data-efactura-send="${inv.id}">📤 Trimite în SPV</button>` : ''}
+            </td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>`;
   el.querySelectorAll('[data-inv]').forEach((btn) => {
     btn.onclick = () => openInvoice(invoices.find((i) => i.id === btn.dataset.inv));
+  });
+  el.querySelectorAll('[data-efactura-xml]').forEach((btn) => {
+    btn.onclick = async () => {
+      const inv = invoices.find((i) => i.id === btn.dataset.efacturaXml);
+      const res = await api(`/api/admin/invoices/${inv.id}/efactura-xml`);
+      if (!res.ok) { alert('Descărcarea XML-ului a eșuat.'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `efactura-${inv.number}.xml`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    };
+  });
+  el.querySelectorAll('[data-efactura-send]').forEach((btn) => {
+    btn.onclick = async () => {
+      const inv = invoices.find((i) => i.id === btn.dataset.efacturaSend);
+      if (!confirm(`Trimiteți factura ${inv.number} în SPV (${(settings.efactura || {}).environment === 'prod' ? 'PRODUCȚIE' : 'mediul de test'})?`)) return;
+      btn.disabled = true;
+      try {
+        const res = await api(`/api/admin/invoices/${inv.id}/efactura-send`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || 'Trimiterea în SPV a eșuat.');
+          if (data.invoice) Object.assign(inv, data.invoice);
+        } else {
+          Object.assign(inv, data);
+        }
+        renderInvoices();
+      } finally {
+        btn.disabled = false;
+      }
+    };
   });
 }
 
@@ -1352,6 +1403,16 @@ function renderSettings() {
   document.getElementById('gm-apiKey').value = (settings.maps || {}).apiKey || '';
   setStatusPill('maps-status', Boolean(orderingConfig.maps && orderingConfig.maps.enabled));
 
+  const ef = settings.efactura || {};
+  document.getElementById('ef-enabled').checked = ef.enabled === true;
+  document.getElementById('ef-environment').value = ef.environment === 'prod' ? 'prod' : 'test';
+  document.getElementById('ef-clientId').value = ef.clientId || '';
+  document.getElementById('ef-clientSecret').value = ef.clientSecret || '';
+  document.getElementById('ef-accessToken').value = ef.accessToken || '';
+  const efPill = document.getElementById('efactura-status');
+  efPill.textContent = ef.enabled === true ? `Activă (${ef.environment === 'prod' ? 'producție' : 'test'})` : 'Neactivată';
+  efPill.className = 'status-pill ' + (ef.enabled === true ? 'on' : 'off');
+
   document.getElementById('s-notificationEmails').value = settings.notificationEmails || '';
 
   renderEmailTemplates();
@@ -1424,6 +1485,20 @@ async function saveTwilio() {
     },
   };
   await saveSettingsPatch(payload, 'twilio-msg', 'Configurarea Twilio a fost salvată.');
+}
+
+async function saveEfactura() {
+  const payload = {
+    efactura: {
+      enabled: document.getElementById('ef-enabled').checked,
+      environment: document.getElementById('ef-environment').value === 'prod' ? 'prod' : 'test',
+      clientId: document.getElementById('ef-clientId').value.trim(),
+      clientSecret: document.getElementById('ef-clientSecret').value.trim(),
+      accessToken: document.getElementById('ef-accessToken').value.trim(),
+    },
+  };
+  await saveSettingsPatch(payload, 'efactura-msg', 'Configurarea e-Factura a fost salvată.');
+  renderInvoices();
 }
 
 async function saveMaps() {
@@ -1661,6 +1736,7 @@ document.getElementById('export-marketing-btn').onclick = exportMarketing;
 document.getElementById('save-templates-btn').onclick = saveTemplates;
 document.getElementById('save-twilio-btn').onclick = saveTwilio;
 document.getElementById('save-maps-btn').onclick = saveMaps;
+document.getElementById('save-efactura-btn').onclick = saveEfactura;
 document.getElementById('save-notification-emails-btn').onclick = saveNotificationEmails;
 document.getElementById('save-email-templates-btn').onclick = saveEmailTemplates;
 document.getElementById('test-sms-btn').onclick = sendTestSms;

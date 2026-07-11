@@ -395,6 +395,44 @@
           </div>
         </div>
 
+        <div class="card settings-card">
+          <h3>🧾 e-Factura (ANAF SPV) <span class="status-pill off" id="efactura-status">Neactivată</span></h3>
+          <p class="settings-desc">Integrarea este <b>construită și pregătită „în spate", dar neactivată</b>: cât timp comutatorul este oprit, aplicația nu comunică deloc cu ANAF. Puteți totuși descărca XML-ul UBL (CIUS-RO) al oricărei facturi din tabul <b>Facturi</b>, pentru verificare. Activați integrarea doar după ce contul SPV și token-ul de acces sunt configurate.</p>
+          <div class="switch-row">
+            <div>
+              <div class="switch-label">Activează trimiterea în SPV</div>
+              <div class="switch-hint">Implicit oprit. Pornit, butonul „Trimite în SPV" din Facturi încarcă XML-ul facturii în sistemul ANAF (mediul selectat mai jos).</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="ef-enabled"><span class="slider"></span></label>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="ef-environment">Mediu ANAF</label>
+              <select id="ef-environment">
+                <option value="test">Test (sandbox ANAF)</option>
+                <option value="prod">Producție (SPV real)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="ef-clientId">OAuth Client ID</label>
+              <input id="ef-clientId" type="text" placeholder="din portalul ANAF (înregistrare aplicație)">
+            </div>
+            <div class="field">
+              <label for="ef-clientSecret">OAuth Client Secret</label>
+              <input id="ef-clientSecret" type="text" placeholder="din portalul ANAF">
+            </div>
+            <div class="field full">
+              <label for="ef-accessToken">Token de acces SPV (JWT)</label>
+              <textarea id="ef-accessToken" class="template-input" rows="2" placeholder="se obține cu certificatul digital calificat, conform documentației ANAF"></textarea>
+            </div>
+          </div>
+          <p class="settings-desc" style="margin-top:12px;">Pași la activare: 1) înregistrați aplicația în <a href="https://logincert.anaf.ro" target="_blank" rel="noopener">portalul ANAF</a> cu certificatul digital calificat; 2) obțineți token-ul OAuth și lipiți-l mai sus; 3) testați întâi pe mediul <b>Test</b>; 4) porniți comutatorul.</p>
+          <div id="efactura-msg"></div>
+          <div class="actions">
+            <button class="btn btn-primary" id="save-efactura-btn">Salvează configurarea e-Factura</button>
+          </div>
+        </div>
+
         <h2>📨 Jurnal mesaje (SMS / WhatsApp)</h2>
         <p class="section-hint" id="sms-provider-hint"></p>
         <div id="sms-log"></div>

@@ -21,6 +21,7 @@ const path = require('path');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const { createStorage } = require('./lib/storage');
+const { buildEFacturaXml, uploadToSpv } = require('./lib/efactura');
 const {
   DEFAULT_SETTINGS,
   SETTINGS_SCHEMA,
@@ -1337,6 +1338,53 @@ app.post('/api/admin/orders/:id/invoice', requireAdmin, asyncRoute(async (req, r
   if (result.error === 'not_found') return res.status(404).json({ error: 'Comanda nu a fost găsită.' });
   if (result.error === 'cancelled') return res.status(400).json({ error: 'Nu se poate emite factură pentru o comandă anulată.' });
   res.status(result.invoice.orderId ? 201 : 200).json(result.invoice);
+}));
+
+// --- e-Factura (ANAF SPV), integrare pregătită dar NEACTIVATĂ implicit ------
+
+// XML-ul UBL (CIUS-RO) se poate genera și descărca oricând, local, pentru
+// verificare; nu implică nicio comunicare cu ANAF.
+app.get('/api/admin/invoices/:id/efactura-xml', requireAdmin, asyncRoute(async (req, res) => {
+  const invoice = await storage.getInvoice(req.params.id);
+  if (!invoice) return res.status(404).json({ error: 'Factura nu a fost găsită.' });
+  const settings = await storage.getSettings();
+  const xml = buildEFacturaXml(invoice, settings);
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="efactura-${invoice.number}.xml"`);
+  res.send(xml);
+}));
+
+// Trimiterea către SPV este blocată cât timp comutatorul efactura.enabled
+// este oprit (implicit): integrarea rămâne „în spate", fără trafic real.
+app.post('/api/admin/invoices/:id/efactura-send', requireAdmin, asyncRoute(async (req, res) => {
+  const settings = await storage.getSettings();
+  const ef = settings.efactura || {};
+  if (ef.enabled !== true) {
+    return res.status(409).json({
+      error: 'Integrarea e-Factura este dezactivată. Este pregătită, dar nu i s-a dat drumul: activați-o din Integrări după configurarea contului SPV.',
+    });
+  }
+  if (!ef.accessToken) {
+    return res.status(400).json({ error: 'Lipsește token-ul de acces SPV. Completați-l în Integrări → e-Factura.' });
+  }
+  const invoice = await storage.getInvoice(req.params.id);
+  if (!invoice) return res.status(404).json({ error: 'Factura nu a fost găsită.' });
+  if (invoice.efactura && invoice.efactura.status === 'trimisa') {
+    return res.status(409).json({ error: `Factura a fost deja trimisă în SPV (index ${invoice.efactura.uploadIndex}).` });
+  }
+  const xml = buildEFacturaXml(invoice, settings);
+  const result = await uploadToSpv({
+    xml,
+    accessToken: ef.accessToken,
+    cif: settings.cui,
+    environment: ef.environment === 'prod' ? 'prod' : 'test',
+  });
+  const efStatus = result.ok
+    ? { status: 'trimisa', uploadIndex: result.uploadIndex, environment: ef.environment === 'prod' ? 'prod' : 'test', at: new Date().toISOString() }
+    : { status: 'eroare', error: result.error, at: new Date().toISOString() };
+  const updated = await storage.setInvoiceEfactura(invoice.id, efStatus);
+  if (!result.ok) return res.status(502).json({ error: `Trimiterea în SPV a eșuat: ${result.error}`, invoice: updated });
+  res.json(updated);
 }));
 
 app.get('/api/admin/sms-log', requireAdmin, asyncRoute(async (req, res) => {
