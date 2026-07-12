@@ -333,23 +333,16 @@
         <h2>🔌 Integrări</h2>
 
         <div class="card settings-card">
-          <h3>📱 Twilio (SMS / WhatsApp) <span class="status-pill off" id="twilio-status">Inactiv</span></h3>
+          <h3>📱 Twilio (SMS) <span class="status-pill off" id="twilio-status">Inactiv</span></h3>
           <p class="settings-desc" id="twilio-source-hint"></p>
           <div class="switch-row">
             <div>
-              <div class="switch-label">Activează trimiterea mesajelor</div>
-              <div class="switch-hint">Comutator general. Cât timp e oprit, mesajele rulează în mod simulat (doar în jurnal), util până la aprobarea expeditorului. Implicit oprit.</div>
+              <div class="switch-label">Activează trimiterea SMS</div>
+              <div class="switch-hint">Comutator general. Cât timp e oprit, SMS-urile rulează în mod simulat (doar în jurnal), util până la aprobarea numărului de expeditor. Implicit oprit.</div>
             </div>
             <label class="switch"><input type="checkbox" id="tw-enabled"><span class="slider"></span></label>
           </div>
           <div class="form-grid">
-            <div class="field">
-              <label for="tw-channel">Canal de trimitere</label>
-              <select id="tw-channel">
-                <option value="sms">SMS</option>
-                <option value="whatsapp">WhatsApp</option>
-              </select>
-            </div>
             <div class="field">
               <label for="tw-accountSid">Account SID</label>
               <input id="tw-accountSid" type="text" placeholder="ex: ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
@@ -363,7 +356,7 @@
               <input id="tw-fromNumber" type="text" placeholder="ex: +40712345678">
             </div>
           </div>
-          <p class="settings-desc">Pe canalul <b>WhatsApp</b> se folosește același cont Twilio, cu un expeditor WhatsApp aprobat (numărul se prefixează automat cu <code>whatsapp:</code>). Lăsați câmpurile de credențiale goale pentru a folosi variabilele de mediu <code>TWILIO_ACCOUNT_SID</code> / <code>TWILIO_AUTH_TOKEN</code> / <code>TWILIO_FROM</code> setate pe host (dacă există).</p>
+          <p class="settings-desc">Lăsați toate cele 3 câmpuri goale pentru a folosi variabilele de mediu <code>TWILIO_ACCOUNT_SID</code> / <code>TWILIO_AUTH_TOKEN</code> / <code>TWILIO_FROM</code> setate pe host (dacă există). Pentru <b>WhatsApp</b> există integrarea separată de mai jos.</p>
           <div id="twilio-msg"></div>
           <div class="actions">
             <button class="btn btn-primary" id="save-twilio-btn">Salvează configurarea Twilio</button>
@@ -373,9 +366,92 @@
             <label for="test-sms-to">📤 Testează trimiterea către un număr de telefon</label>
             <div class="test-send-row">
               <input id="test-sms-to" type="tel" placeholder="ex: 0722 123 456">
-              <button class="btn btn-ghost" id="test-sms-btn">Trimite mesaj de test</button>
+              <button class="btn btn-ghost" id="test-sms-btn">Trimite SMS de test</button>
             </div>
-            <p class="test-send-hint">Se trimite un mesaj de probă (pe canalul selectat) la numărul de mai sus. Salvați mai întâi datele Twilio pentru un test real; altfel mesajul apare doar în jurnal (mod simulat).</p>
+            <p class="test-send-hint">Se trimite un SMS de probă la numărul de mai sus. Salvați mai întâi datele Twilio pentru un test real; altfel mesajul apare doar în jurnal (mod simulat).</p>
+          </div>
+        </div>
+
+        <div class="card settings-card">
+          <h3>💬 WhatsApp (Twilio) <span class="status-pill off" id="whatsapp-status">Inactiv</span></h3>
+          <p class="settings-desc">Integrare <b>separată de SMS</b>: propriul expeditor WhatsApp aprobat în Twilio, propriile mesaje (cu diacritice și emoji). Cât timp comutatorul e oprit, mesajele rulează în mod simulat (doar în jurnal).</p>
+          <div class="switch-row">
+            <div>
+              <div class="switch-label">Activează trimiterea pe WhatsApp</div>
+              <div class="switch-hint">Necesită un expeditor WhatsApp aprobat în contul Twilio (WhatsApp Business). Implicit oprit.</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="wa-enabled"><span class="slider"></span></label>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="wa-accountSid">Account SID</label>
+              <input id="wa-accountSid" type="text" placeholder="ex: ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+            </div>
+            <div class="field">
+              <label for="wa-authToken">Auth Token</label>
+              <input id="wa-authToken" type="text" placeholder="ex: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+            </div>
+            <div class="field">
+              <label for="wa-fromNumber">Expeditor WhatsApp</label>
+              <input id="wa-fromNumber" type="text" placeholder="ex: +40712345678 sau whatsapp:+40712345678">
+            </div>
+          </div>
+
+          <div class="switch-row" style="margin-top:16px;">
+            <div>
+              <div class="switch-label">✅ Confirmarea comenzilor pe WhatsApp</div>
+              <div class="switch-hint">Când confirmați o comandă, clientul primește mesajul de mai jos pe WhatsApp.</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="wa-confirmations"><span class="slider"></span></label>
+          </div>
+          <div class="field">
+            <label for="wa-tpl-confirmed">Mesajul de confirmare <span class="switch-hint" style="display:inline;">(token-uri: {number} {name} {company} {total} {city} {deliveryDate} {trackingUrl})</span></label>
+            <textarea id="wa-tpl-confirmed" class="template-input" rows="3"></textarea>
+          </div>
+
+          <div class="switch-row" style="margin-top:16px;">
+            <div>
+              <div class="switch-label">📅 Reamintire de livrare, programată</div>
+              <div class="switch-hint">În zilele bifate, la ora setată (ora României), toți clienții din CRM primesc pe WhatsApp anunțul cu următoarea zi de livrare și invitația de a comanda.</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="wa-rem-enabled"><span class="slider"></span></label>
+          </div>
+          <div class="wa-reminder-grid">
+            <div class="field">
+              <label>Zilele de trimitere</label>
+              <div class="wa-days" id="wa-days">
+                <label><input type="checkbox" data-wa-day="1"> Lu</label>
+                <label><input type="checkbox" data-wa-day="2"> Ma</label>
+                <label><input type="checkbox" data-wa-day="3"> Mi</label>
+                <label><input type="checkbox" data-wa-day="4"> Jo</label>
+                <label><input type="checkbox" data-wa-day="5"> Vi</label>
+                <label><input type="checkbox" data-wa-day="6"> Sâ</label>
+                <label><input type="checkbox" data-wa-day="0"> Du</label>
+              </div>
+            </div>
+            <div class="field">
+              <label for="wa-rem-time">Ora trimiterii</label>
+              <input id="wa-rem-time" type="time" value="18:00">
+            </div>
+          </div>
+          <div class="field">
+            <label for="wa-tpl-reminder">Mesajul reamintirii <span class="switch-hint" style="display:inline;">(token-uri: {name} {deliveryDay} {deliveryDate} {cutoff} {url})</span></label>
+            <textarea id="wa-tpl-reminder" class="template-input" rows="3"></textarea>
+          </div>
+          <p class="settings-desc" id="wa-rem-status"></p>
+          <div id="whatsapp-msg"></div>
+          <div class="actions">
+            <button class="btn btn-primary" id="save-whatsapp-btn">Salvează configurarea WhatsApp</button>
+            <button class="btn btn-ghost" id="wa-reminder-now-btn">📣 Trimite reamintirea acum, către toți clienții</button>
+          </div>
+
+          <div class="test-send">
+            <label for="test-wa-to">📤 Testează trimiterea către un număr de telefon</label>
+            <div class="test-send-row">
+              <input id="test-wa-to" type="tel" placeholder="ex: 0722 123 456">
+              <button class="btn btn-ghost" id="test-wa-btn">Trimite WhatsApp de test</button>
+            </div>
+            <p class="test-send-hint">Cu integrarea oprită, mesajul apare doar în jurnal (mod simulat). Pentru WhatsApp real, clientul trebuie să fi acceptat conversația (opt-in), conform regulilor WhatsApp Business.</p>
           </div>
         </div>
 
