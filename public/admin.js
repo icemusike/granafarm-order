@@ -1293,16 +1293,16 @@ const SMS_KIND_LABELS = {
   livrata: 'Livrată → client',
   anulata: 'Anulată → client',
   achitata: 'Achitată → client',
+  reminder_livrare: 'Reamintire livrare → client',
   test: 'Test',
 };
 const STATUS_BADGE = { trimis: 'badge-livrata', simulat: 'badge-confirmata', eroare: 'badge-anulata' };
 
 function renderSmsLog() {
-  const channelLabel = smsInfo.channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
+  const smsState = smsInfo.provider === 'twilio' ? '<b>activ</b>' : 'mod simulat';
+  const waState = smsInfo.waProvider === 'twilio' ? '<b>activ</b>' : 'mod simulat';
   document.getElementById('sms-provider-hint').innerHTML =
-    smsInfo.provider === 'twilio'
-      ? `Trimiterea mesajelor este <b>activă</b> prin Twilio, pe canalul <b>${channelLabel}</b>. La fiecare comandă nouă primiți mesaj pe telefonul proprietarului, iar clientul primește mesaj când confirmați comanda.`
-      : 'Mesajele rulează în <b>mod simulat</b> (se înregistrează doar în jurnalul de mai jos). Configurați Twilio în secțiunea de mai sus pentru trimitere reală.';
+    `SMS: ${smsState} · WhatsApp: ${waState}. Mesajele în mod simulat se înregistrează doar în jurnalul de mai jos, fără trimitere reală.`;
 
   const el = document.getElementById('sms-log');
   if (smsInfo.log.length === 0) {
@@ -1385,9 +1385,7 @@ function renderSettings() {
   document.getElementById('tpl-clientConfirmed').value = tpl.clientConfirmed || '';
 
   const tw = settings.twilio || {};
-  const channelLabel = tw.channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
   document.getElementById('tw-enabled').checked = tw.enabled === true;
-  document.getElementById('tw-channel').value = tw.channel === 'whatsapp' ? 'whatsapp' : 'sms';
   document.getElementById('tw-accountSid').value = tw.accountSid || '';
   document.getElementById('tw-authToken').value = tw.authToken || '';
   document.getElementById('tw-fromNumber').value = tw.fromNumber || '';
@@ -1395,11 +1393,35 @@ function renderSettings() {
   document.getElementById('twilio-source-hint').innerHTML =
     settings.smsProvider === 'twilio'
       ? (settings.smsSource === 'settings'
-        ? `Mesajele (${channelLabel}) sunt <b>active</b>, folosind datele Twilio completate mai jos.`
-        : `Mesajele (${channelLabel}) sunt <b>active</b>, folosind variabilele de mediu Twilio setate pe host.`)
+        ? 'SMS-urile sunt <b>active</b>, folosind datele Twilio completate mai jos.'
+        : 'SMS-urile sunt <b>active</b>, folosind variabilele de mediu Twilio setate pe host.')
       : (tw.enabled === true
-        ? 'Comutatorul este pornit, dar mesajele rulează în <b>mod simulat</b>, completați datele Twilio pentru trimitere reală.'
-        : 'Mesajele sunt <b>dezactivate</b> (mod simulat, doar în jurnal). Porniți comutatorul de mai jos după aprobarea expeditorului.');
+        ? 'Comutatorul este pornit, dar SMS-urile rulează în <b>mod simulat</b>, completați datele Twilio pentru trimitere reală.'
+        : 'SMS-urile sunt <b>dezactivate</b> (mod simulat, doar în jurnal). Porniți comutatorul de mai jos după aprobarea numărului de expeditor.');
+
+  // WhatsApp (integrare separată de SMS)
+  const wa = settings.whatsapp || {};
+  const waTemplates = wa.templates || {};
+  const waReminder = wa.reminder || {};
+  document.getElementById('wa-enabled').checked = wa.enabled === true;
+  document.getElementById('wa-accountSid').value = wa.accountSid || '';
+  document.getElementById('wa-authToken').value = wa.authToken || '';
+  document.getElementById('wa-fromNumber').value = wa.fromNumber || '';
+  document.getElementById('wa-confirmations').checked = wa.confirmations !== false;
+  document.getElementById('wa-tpl-confirmed').value = waTemplates.clientConfirmed || '';
+  document.getElementById('wa-tpl-reminder').value = waTemplates.deliveryReminder || '';
+  document.getElementById('wa-rem-enabled').checked = waReminder.enabled === true;
+  document.getElementById('wa-rem-time').value = waReminder.time || '18:00';
+  const reminderDays = (waReminder.days || []).map(Number);
+  document.querySelectorAll('[data-wa-day]').forEach((box) => {
+    box.checked = reminderDays.includes(Number(box.dataset.waDay));
+  });
+  setStatusPill('whatsapp-status', wa.enabled === true && Boolean(wa.accountSid && wa.authToken && wa.fromNumber));
+  document.getElementById('wa-rem-status').innerHTML = waReminder.lastSentDate
+    ? `Ultima reamintire programată a fost trimisă pe <b>${new Date(waReminder.lastSentDate + 'T12:00:00').toLocaleDateString('ro-RO', { dateStyle: 'long' })}</b>.`
+    : 'Reamintirea programată nu a fost trimisă încă.';
+  const twaEl = document.getElementById('test-wa-to');
+  if (twaEl && !twaEl.value) twaEl.value = settings.ownerPhone || '';
 
   document.getElementById('gm-apiKey').value = (settings.maps || {}).apiKey || '';
   setStatusPill('maps-status', Boolean(orderingConfig.maps && orderingConfig.maps.enabled));
@@ -1483,13 +1505,88 @@ async function saveTwilio() {
   const payload = {
     twilio: {
       enabled: document.getElementById('tw-enabled').checked,
-      channel: document.getElementById('tw-channel').value === 'whatsapp' ? 'whatsapp' : 'sms',
       accountSid: document.getElementById('tw-accountSid').value.trim(),
       authToken: document.getElementById('tw-authToken').value.trim(),
       fromNumber: document.getElementById('tw-fromNumber').value.trim(),
     },
   };
   await saveSettingsPatch(payload, 'twilio-msg', 'Configurarea Twilio a fost salvată.');
+}
+
+async function saveWhatsApp() {
+  const days = [...document.querySelectorAll('[data-wa-day]')]
+    .filter((box) => box.checked)
+    .map((box) => Number(box.dataset.waDay));
+  const payload = {
+    whatsapp: {
+      enabled: document.getElementById('wa-enabled').checked,
+      accountSid: document.getElementById('wa-accountSid').value.trim(),
+      authToken: document.getElementById('wa-authToken').value.trim(),
+      fromNumber: document.getElementById('wa-fromNumber').value.trim(),
+      confirmations: document.getElementById('wa-confirmations').checked,
+      templates: {
+        clientConfirmed: document.getElementById('wa-tpl-confirmed').value,
+        deliveryReminder: document.getElementById('wa-tpl-reminder').value,
+      },
+      reminder: {
+        enabled: document.getElementById('wa-rem-enabled').checked,
+        days,
+        time: document.getElementById('wa-rem-time').value || '18:00',
+        // păstrăm data ultimei trimiteri, altfel salvarea ar putea duce la
+        // o a doua trimitere în aceeași zi
+        lastSentDate: ((settings.whatsapp || {}).reminder || {}).lastSentDate || '',
+      },
+    },
+  };
+  await saveSettingsPatch(payload, 'whatsapp-msg', 'Configurarea WhatsApp a fost salvată.');
+}
+
+async function sendTestWhatsApp() {
+  const msg = document.getElementById('whatsapp-msg');
+  const to = document.getElementById('test-wa-to').value.trim();
+  if (!to) {
+    msg.innerHTML = '<div class="msg msg-error">Introduceți numărul de telefon către care să trimitem mesajul de test.</div>';
+    document.getElementById('test-wa-to').focus();
+    return;
+  }
+  const btn = document.getElementById('test-wa-btn');
+  btn.disabled = true;
+  msg.innerHTML = `<div class="msg msg-success">Se trimite WhatsApp de test către ${esc(to)}...</div>`;
+  try {
+    const res = await api('/api/admin/test-whatsapp', { method: 'POST', body: JSON.stringify({ to }) });
+    const data = await res.json();
+    msg.innerHTML = res.ok
+      ? `<div class="msg msg-success">WhatsApp de test: <b>${esc(data.status)}</b> către ${esc(data.to)}.</div>`
+      : `<div class="msg msg-error">${esc(data.error)}</div>`;
+    api('/api/admin/sms-log').then((r) => r.json()).then((d) => { smsInfo = d; renderSmsLog(); });
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function sendReminderNow() {
+  const msg = document.getElementById('whatsapp-msg');
+  const clientCount = clients.length ? ` (~${clients.length} clienți)` : '';
+  if (!confirm(`Trimiteți ACUM reamintirea de livrare pe WhatsApp către toți clienții din CRM${clientCount}?\n\nCu integrarea oprită, mesajele apar doar în jurnal (mod simulat).`)) return;
+  const btn = document.getElementById('wa-reminder-now-btn');
+  btn.disabled = true;
+  msg.innerHTML = '<div class="msg msg-success">Se trimit reamintirile...</div>';
+  try {
+    const res = await api('/api/admin/whatsapp/reminder-send', { method: 'POST', body: JSON.stringify({}) });
+    const data = await res.json();
+    if (!res.ok) {
+      msg.innerHTML = `<div class="msg msg-error">${esc(data.error || 'Trimiterea a eșuat.')}</div>`;
+      return;
+    }
+    const parts = [`${data.total} ${data.total === 1 ? 'client' : 'clienți'}`];
+    if (data.sent) parts.push(`${data.sent} trimise`);
+    if (data.simulated) parts.push(`${data.simulated} simulate (doar în jurnal)`);
+    if (data.errors) parts.push(`${data.errors} erori`);
+    msg.innerHTML = `<div class="msg msg-success">📣 Reamintire pentru livrarea din ${esc(data.deliveryDate.split('-').reverse().join('.'))}: ${parts.join(', ')}.</div>`;
+    api('/api/admin/sms-log').then((r) => r.json()).then((d) => { smsInfo = d; renderSmsLog(); });
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // Starea token-ului SPV: prezent / lipsă, valabilitate, refresh automat.
@@ -1820,6 +1917,9 @@ document.getElementById('mk-enabled').onchange = saveMarketing;
 document.getElementById('export-marketing-btn').onclick = exportMarketing;
 document.getElementById('save-templates-btn').onclick = saveTemplates;
 document.getElementById('save-twilio-btn').onclick = saveTwilio;
+document.getElementById('save-whatsapp-btn').onclick = saveWhatsApp;
+document.getElementById('test-wa-btn').onclick = sendTestWhatsApp;
+document.getElementById('wa-reminder-now-btn').onclick = sendReminderNow;
 document.getElementById('save-maps-btn').onclick = saveMaps;
 document.getElementById('save-efactura-btn').onclick = saveEfactura;
 document.getElementById('ef-authorize-btn').onclick = authorizeEfactura;

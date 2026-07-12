@@ -102,53 +102,66 @@ function isPostmarkConfigured(settings) {
   return Boolean(p.enabled && p.apiToken && p.fromEmail);
 }
 
-// Canalul de mesaje: SMS clasic sau WhatsApp (același API Twilio, numerele
-// se prefixează cu whatsapp:). Diacriticele se păstrează doar pe WhatsApp,
-// unde nu reduc limita de caractere.
-function messagingChannel(settings) {
-  return (settings.twilio || {}).channel === 'whatsapp' ? 'whatsapp' : 'sms';
+// Apel comun către API-ul Twilio Messages (folosit de SMS și de WhatsApp).
+async function twilioSend(cfg, { to, from, body }) {
+  try {
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${cfg.sid}/Messages.json`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Basic ' + Buffer.from(`${cfg.sid}:${cfg.token}`).toString('base64'),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ To: to, From: from, Body: body }),
+    });
+    if (res.ok) return { status: 'trimis' };
+    const err = await res.json().catch(() => ({}));
+    return { status: 'eroare', error: err.message || `HTTP ${res.status}` };
+  } catch (e) {
+    return { status: 'eroare', error: e.message };
+  }
 }
 
 async function sendSms(settings, to, body, kind) {
-  const channel = messagingChannel(settings);
-  const entry = {
-    to: normalizePhone(to),
-    kind,
-    channel,
-    body: channel === 'whatsapp' ? String(body) : stripDiacritics(body),
-    status: 'simulat',
-  };
+  const entry = { to: normalizePhone(to), kind, channel: 'sms', body: stripDiacritics(body), status: 'simulat' };
   const cfg = getTwilioConfig(settings);
 
   if (cfg) {
-    try {
-      // pe canalul WhatsApp, Twilio cere prefixul whatsapp: pe ambele numere
-      const from = cfg.from.replace(/^whatsapp:/, '');
-      const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${cfg.sid}/Messages.json`, {
-        method: 'POST',
-        headers: {
-          Authorization: 'Basic ' + Buffer.from(`${cfg.sid}:${cfg.token}`).toString('base64'),
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          To: channel === 'whatsapp' ? `whatsapp:${entry.to}` : entry.to,
-          From: channel === 'whatsapp' ? `whatsapp:${from}` : cfg.from,
-          Body: entry.body,
-        }),
-      });
-      if (res.ok) {
-        entry.status = 'trimis';
-      } else {
-        const err = await res.json().catch(() => ({}));
-        entry.status = 'eroare';
-        entry.error = err.message || `HTTP ${res.status}`;
-      }
-    } catch (e) {
-      entry.status = 'eroare';
-      entry.error = e.message;
-    }
+    Object.assign(entry, await twilioSend(cfg, { to: entry.to, from: cfg.from, body: entry.body }));
   } else {
-    console.log(`[${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'} simulat] catre ${entry.to}: ${redactTrackingTokens(entry.body)}`);
+    console.log(`[SMS simulat] catre ${entry.to}: ${redactTrackingTokens(entry.body)}`);
+  }
+
+  const storedEntry = { ...entry, body: redactTrackingTokens(entry.body) };
+  await storage.addSms(storedEntry);
+  return storedEntry;
+}
+
+// Config WhatsApp activă: integrare separată de SMS, cu propriul comutator
+// (implicit oprit = mod simulat) și propriul expeditor aprobat în Twilio.
+function getWhatsAppConfig(settings) {
+  const w = settings.whatsapp || {};
+  if (w.enabled !== true) return null;
+  if (w.accountSid && w.authToken && w.fromNumber) {
+    return { sid: w.accountSid, token: w.authToken, from: w.fromNumber };
+  }
+  return null;
+}
+
+// Mesaj WhatsApp către un client. Diacriticele se păstrează (nu reduc
+// limita de caractere, ca la SMS). Totul se scrie în jurnalul de mesaje.
+async function sendWhatsApp(settings, to, body, kind) {
+  const entry = { to: normalizePhone(to), kind, channel: 'whatsapp', body: String(body), status: 'simulat' };
+  const cfg = getWhatsAppConfig(settings);
+
+  if (cfg) {
+    const from = String(cfg.from).replace(/^whatsapp:/, '');
+    Object.assign(entry, await twilioSend(cfg, {
+      to: `whatsapp:${entry.to}`,
+      from: `whatsapp:${from}`,
+      body: entry.body,
+    }));
+  } else {
+    console.log(`[WhatsApp simulat] catre ${entry.to}: ${redactTrackingTokens(entry.body)}`);
   }
 
   const storedEntry = { ...entry, body: redactTrackingTokens(entry.body) };
@@ -279,6 +292,13 @@ async function notifyClientConfirmed(order, trackingUrl = '') {
   const settings = await storage.getSettings();
   const body = renderSmsTemplate(settings.smsTemplates.clientConfirmed, order);
   await sendSms(settings, order.customer.phone, body, 'confirmare');
+  // confirmarea pe WhatsApp (integrare separată, cu șablonul propriu)
+  if ((settings.whatsapp || {}).confirmations !== false) {
+    const waTemplate = ((settings.whatsapp || {}).templates || {}).clientConfirmed
+      || DEFAULT_SETTINGS.whatsapp.templates.clientConfirmed;
+    const waBody = renderSmsTemplate(waTemplate, order, { trackingUrl });
+    await sendWhatsApp(settings, order.customer.phone, waBody, 'confirmare');
+  }
   await sendScenarioEmail(order, 'confirmed', trackingUrl);
 }
 
@@ -1530,7 +1550,7 @@ app.get('/api/admin/sms-log', requireAdmin, asyncRoute(async (req, res) => {
   const settings = await storage.getSettings();
   res.json({
     provider: getTwilioConfig(settings) ? 'twilio' : 'simulat',
-    channel: messagingChannel(settings),
+    waProvider: getWhatsAppConfig(settings) ? 'twilio' : 'simulat',
     log: await storage.listSms(),
   });
 }));
@@ -1544,11 +1564,105 @@ app.post('/api/admin/test-sms', requireAdmin, asyncRoute(async (req, res) => {
   const settings = await storage.getSettings();
   const to = (req.body && req.body.to) || settings.ownerPhone;
   if (!to) return res.status(400).json({ error: 'Introduceți un număr de telefon pentru test.' });
-  const channelLabel = messagingChannel(settings) === 'whatsapp' ? 'WhatsApp' : 'SMS';
-  const entry = await sendSms(settings, to, `Acesta este un mesaj de test (${channelLabel}) trimis din panoul de administrare GranaFarm.`, 'test');
-  if (entry.status === 'eroare') return res.status(502).json({ error: entry.error || 'Trimiterea mesajului a eșuat.' });
+  const entry = await sendSms(settings, to, 'Acesta este un SMS de test trimis din panoul de administrare GranaFarm.', 'test');
+  if (entry.status === 'eroare') return res.status(502).json({ error: entry.error || 'Trimiterea SMS a eșuat.' });
   res.json(entry);
 }));
+
+app.post('/api/admin/test-whatsapp', requireAdmin, asyncRoute(async (req, res) => {
+  const settings = await storage.getSettings();
+  const to = (req.body && req.body.to) || settings.ownerPhone;
+  if (!to) return res.status(400).json({ error: 'Introduceți un număr de telefon pentru test.' });
+  const entry = await sendWhatsApp(settings, to, 'Acesta este un mesaj WhatsApp de test trimis din panoul de administrare GranaFarm. 🍅', 'test');
+  if (entry.status === 'eroare') return res.status(502).json({ error: entry.error || 'Trimiterea WhatsApp a eșuat.' });
+  res.json(entry);
+}));
+
+// --- reamintirea de livrare pe WhatsApp (programată + trimitere manuală) -----
+
+// Șablonul reamintirii, cu token-uri de campanie (nu de comandă):
+// {name} {deliveryDay} {deliveryDate} {cutoff} {url}
+function renderReminderTemplate(tpl, { name, deliveryDate, cutoff, url }) {
+  const date = new Date(`${deliveryDate}T12:00:00Z`);
+  const deliveryDay = new Intl.DateTimeFormat('ro-RO', { weekday: 'long', timeZone: 'UTC' }).format(date);
+  return String(tpl || '')
+    .replace(/\{name\}/g, name)
+    .replace(/\{deliveryDay\}/g, deliveryDay)
+    .replace(/\{deliveryDate\}/g, deliveryDate.split('-').reverse().join('.'))
+    .replace(/\{cutoff\}/g, cutoff)
+    .replace(/\{url\}/g, url);
+}
+
+// Trimite reamintirea de livrare către toți clienții din CRM (agregați din
+// comenzi). `onlyTo` limitează la un singur număr, pentru test.
+async function sendDeliveryReminders({ onlyTo = '' } = {}) {
+  const settings = await storage.getSettings();
+  const config = normalizeOrderingConfig(settings);
+  const template = ((settings.whatsapp || {}).templates || {}).deliveryReminder
+    || DEFAULT_SETTINGS.whatsapp.templates.deliveryReminder;
+  const deliveryDate = earliestDeliveryDate(config, 0);
+  const url = (buildNotificationTrackingUrl({ get: () => '' }, '/') || '/').replace(/\/$/, '')
+    || 'https://comenzi.granafarm.ro';
+
+  let recipients;
+  if (onlyTo) {
+    recipients = [{ name: 'Client', phone: onlyTo }];
+  } else {
+    const [orders, clientData] = await Promise.all([storage.listOrders(), storage.listClientData()]);
+    recipients = aggregateClients(orders, clientData);
+  }
+
+  const results = { total: recipients.length, sent: 0, simulated: 0, errors: 0, deliveryDate };
+  for (const client of recipients) {
+    const body = renderReminderTemplate(template, {
+      name: client.name || 'client',
+      deliveryDate,
+      cutoff: config.cutoffTime,
+      url,
+    });
+    const entry = await sendWhatsApp(settings, client.phone, body, 'reminder_livrare');
+    if (entry.status === 'trimis') results.sent += 1;
+    else if (entry.status === 'simulat') results.simulated += 1;
+    else results.errors += 1;
+  }
+  return results;
+}
+
+// Trimitere manuală (buton în panou): merge oricând, indiferent de program;
+// cu integrarea WhatsApp oprită mesajele rămân doar în jurnal (mod simulat).
+app.post('/api/admin/whatsapp/reminder-send', requireAdmin, asyncRoute(async (req, res) => {
+  const onlyTo = String((req.body && req.body.to) || '').trim();
+  const results = await sendDeliveryReminders({ onlyTo });
+  res.json(results);
+}));
+
+// Programarea automată: la fiecare jumătate de minut verificăm ora României;
+// în zilele bifate, la ora setată, reamintirea pleacă o singură dată pe zi
+// (lastSentDate previne dublurile, inclusiv după restart).
+async function deliveryReminderTick() {
+  const settings = await storage.getSettings();
+  const reminder = (settings.whatsapp || {}).reminder || {};
+  if (reminder.enabled !== true) return;
+  const now = getRomaniaNowParts();
+  const weekday = parseIsoDate(now.date).getUTCDay();
+  const days = Array.isArray(reminder.days) ? reminder.days.map(Number) : [];
+  if (!days.includes(weekday)) return;
+  const [hour, minute] = String(reminder.time || '18:00').split(':').map(Number);
+  if (now.hour !== hour || now.minute !== minute) return;
+  if (reminder.lastSentDate === now.date) return;
+
+  // marcăm ziua înainte de trimitere, ca un tick paralel să nu dubleze
+  await storage.saveSettings({
+    ...settings,
+    whatsapp: { ...settings.whatsapp, reminder: { ...reminder, lastSentDate: now.date } },
+  });
+  const results = await sendDeliveryReminders();
+  console.log(`Reamintire livrare WhatsApp trimisă (${now.date} ${reminder.time}): ${JSON.stringify(results)}`);
+}
+
+setInterval(() => {
+  deliveryReminderTick().catch((e) => console.error('Reamintire livrare, eroare:', e.message));
+}, 30000).unref();
 
 app.post('/api/admin/test-email', requireAdmin, asyncRoute(async (req, res) => {
   const settings = await storage.getSettings();
