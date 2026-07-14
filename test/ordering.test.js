@@ -166,8 +166,64 @@ test('ordering API keeps pricing authoritative and tracking private', async (t) 
   assert.equal(storedOrder.trackingUrl, `/track/${token}`);
   assert.deepEqual(storedOrder.delivery.location, { lat: 45.7982, lng: 21.2089, formattedAddress: 'Timișoara', placeId: '' });
 
+  const adminHeaders = {
+    'content-type': 'application/json',
+    'x-admin-password': 'test-admin-password',
+  };
+  const clientsResponse = await fetch(`${baseUrl}/api/admin/clients`, { headers: adminHeaders });
+  assert.equal(clientsResponse.status, 200);
+  const clients = await clientsResponse.json();
+  const client = clients.find((entry) => entry.phone === customer.phone);
+  assert.ok(client);
+  assert.equal(client.lastOrder.number, created.number);
+  assert.deepEqual(client.lastOrder.items, [{
+    productId: product.id,
+    name: product.name,
+    unit: product.unit,
+    qty: quantity,
+  }]);
+  assert.deepEqual(client.lastOrder.delivery.location, storedOrder.delivery.location);
+
+  const reorderPayload = {
+    items: [{ productId: product.id, qty: quantity }],
+    delivery: { zoneId: zone.id, windowId: deliveryWindow.id, date: deliveryDate },
+    notes: 'Sunați la sosire',
+  };
+  const unauthorizedReorder = await fetch(
+    `${baseUrl}/api/admin/clients/${encodeURIComponent(client.key)}/orders`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(reorderPayload),
+    },
+  );
+  assert.equal(unauthorizedReorder.status, 401);
+
+  const reorderResponse = await fetch(
+    `${baseUrl}/api/admin/clients/${encodeURIComponent(client.key)}/orders`,
+    {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify(reorderPayload),
+    },
+  );
+  assert.equal(reorderResponse.status, 201);
+  const reordered = await reorderResponse.json();
+  assert.notEqual(reordered.number, created.number);
+  assert.equal(reordered.total, created.total);
+
+  const adminOrders = await fetch(`${baseUrl}/api/admin/orders`, { headers: adminHeaders })
+    .then((response) => response.json());
+  const reorderedOrder = adminOrders.find((order) => order.number === reordered.number);
+  assert.equal(reorderedOrder.customer.phone, customer.phone);
+  assert.equal(reorderedOrder.customer.notes, reorderPayload.notes);
+  assert.deepEqual(reorderedOrder.delivery.location, storedOrder.delivery.location);
+  assert.deepEqual(
+    reorderedOrder.items.map((item) => ({ productId: item.productId, qty: item.qty })),
+    reorderPayload.items,
+  );
+
   await new Promise((resolve) => setTimeout(resolve, 100));
-  const adminHeaders = { 'x-admin-password': 'test-admin-password' };
   const smsLog = await fetch(`${baseUrl}/api/admin/sms-log`, { headers: adminHeaders }).then((response) => response.json());
   assert.ok(smsLog.log.some((entry) => entry.kind === 'comanda_primita_client'));
   assert.ok(smsLog.log.every((entry) => !/\/track\/[A-Za-z0-9_-]{43}/.test(entry.body || '')));

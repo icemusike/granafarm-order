@@ -28,6 +28,7 @@ Demo-ul folosește aceeași interfață, dar datele (comenzi, produse, facturi) 
 Protejat cu parolă, organizat pe secțiuni cu navigare:
 
 - **📋 Comenzi** — lista comenzilor cu filtrare după status, detalii complete (produse, cantități, date de livrare, telefon apelabil), schimbarea statusului **Nouă → Confirmată → În livrare → Livrată** (sau Anulată)
+- **👥 Clienți** — fișe CRM cu istoric, produse preferate, restanțe și notițe interne; o comandă nouă poate fi plasată direct pentru un client salvat, pornind de la ultima comandă și folosind prețurile și regulile de livrare curente
 - **📊 Statistici** — total comenzi, valoare vânzări, comenzi primite azi, comenzi scadente (livrare azi sau depășită), cu grafice pe zile și filtrare pe interval: Azi, Ieri, Săptămâna/Luna aceasta sau trecută, interval personalizat, tot timpul (implicit: ultimele 7 zile)
 - **🥕 Produse** — catalog cu categorii, descrieri, prețuri, unități de măsură și disponibilitate
 - **🧾 Facturi** — emitere automată cu serie și numerotare, defalcare bază de impozitare + TVA, printare / salvare PDF din browser

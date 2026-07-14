@@ -46,6 +46,8 @@ let statsLoadedOnce = false;
 let clients = [];
 let clientsLoadedOnce = false;
 let clientSearch = '';
+let clientOrderDraft = null;
+let adminToastTimer = null;
 const expanded = new Set();
 const clientExpanded = new Set();
 
@@ -985,6 +987,524 @@ function clientMatchesSearch(c, needle) {
 
 const roDateTime = (iso) => new Date(iso).toLocaleDateString('ro-RO', { dateStyle: 'medium' });
 
+function clientOrderProducts() {
+  return products.filter((product) =>
+    product.available
+    && product.stockStatus !== 'out_of_stock'
+    && Number(product.price) > 0
+  );
+}
+
+const roundQuantity = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+function clientOrderQuantityValid(product, value) {
+  const qty = Number(value);
+  const minimum = Number(product.minQty) > 0 ? Number(product.minQty) : 1;
+  const step = Number(product.step) > 0 ? Number(product.step) : 1;
+  if (!Number.isFinite(qty) || qty < minimum || qty > 10000) return false;
+  if (Math.abs(qty - roundQuantity(qty)) > 1e-8) return false;
+  const multiple = (qty - minimum) / step;
+  return Math.abs(multiple - Math.round(multiple)) < 1e-8;
+}
+
+function normalizedClientOrderQuantity(product, value) {
+  const qty = Number(value);
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
+  if (clientOrderQuantityValid(product, qty)) return roundQuantity(qty);
+  const minimum = Number(product.minQty) > 0 ? Number(product.minQty) : 1;
+  const step = Number(product.step) > 0 ? Number(product.step) : 1;
+  const steps = Math.max(0, Math.round((qty - minimum) / step));
+  return roundQuantity(minimum + steps * step);
+}
+
+function seedClientOrderQuantities(client) {
+  const result = new Map();
+  const available = clientOrderProducts();
+  for (const item of client.lastOrder?.items || []) {
+    const product = available.find((candidate) => candidate.id === item.productId)
+      || available.find((candidate) => candidate.name === item.name && candidate.unit === item.unit);
+    if (!product) continue;
+    const qty = normalizedClientOrderQuantity(product, item.qty);
+    if (qty > 0) result.set(product.id, qty);
+  }
+  return result;
+}
+
+function normalizedClientOrderSearch(value) {
+  return String(value || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function clientOrderRomaniaNow() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Bucharest',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+  };
+}
+
+function clientOrderBusinessDays() {
+  const days = (Array.isArray(orderingConfig.businessDays) ? orderingConfig.businessDays : [0, 1, 2, 3, 4, 5, 6])
+    .map(Number)
+    .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+  return new Set(days.length ? days : [0, 1, 2, 3, 4, 5, 6]);
+}
+
+function clientOrderZone() {
+  return (orderingConfig.deliveryZones || []).find((zone) => zone.id === clientOrderDraft?.zoneId)
+    || (orderingConfig.deliveryZones || [])[0]
+    || null;
+}
+
+function clientOrderEarliestDate() {
+  const now = clientOrderRomaniaNow();
+  const allowedDays = clientOrderBusinessDays();
+  const cursor = new Date(`${now.date}T00:00:00Z`);
+  const zone = clientOrderZone();
+  const productLeadDays = clientOrderProducts().reduce((maximum, product) =>
+    clientOrderDraft?.quantities.has(product.id)
+      ? Math.max(maximum, Math.max(0, Math.floor(Number(product.expectedDeliveryDays) || 0)))
+      : maximum, 0);
+  const leadDays = Math.max(Math.max(0, Math.floor(Number(zone?.leadDays) || 0)), productLeadDays);
+  const [cutoffHour, cutoffMinute] = String(orderingConfig.cutoffTime || '23:59').split(':').map(Number);
+  const todayIsDeliveryDay = allowedDays.has(cursor.getUTCDay());
+  const afterCutoff = todayIsDeliveryDay
+    && now.hour * 60 + now.minute >= cutoffHour * 60 + cutoffMinute;
+  let remaining = leadDays + (afterCutoff ? 1 : 0);
+
+  if (remaining === 0 && !todayIsDeliveryDay) {
+    do cursor.setUTCDate(cursor.getUTCDate() + 1);
+    while (!allowedDays.has(cursor.getUTCDay()));
+  } else {
+    while (remaining > 0) {
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+      if (allowedDays.has(cursor.getUTCDay())) remaining -= 1;
+    }
+  }
+  return cursor.toISOString().slice(0, 10);
+}
+
+function clientOrderMaximumDate() {
+  const cursor = new Date(`${clientOrderRomaniaNow().date}T00:00:00Z`);
+  cursor.setUTCDate(cursor.getUTCDate() + 365);
+  return cursor.toISOString().slice(0, 10);
+}
+
+function clientOrderDateLabel(iso) {
+  if (!iso) return '';
+  return new Intl.DateTimeFormat('ro-RO', {
+    weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC',
+  }).format(new Date(`${iso}T12:00:00Z`));
+}
+
+function clientOrderTotals() {
+  const selected = clientOrderProducts()
+    .map((product) => ({ product, qty: Number(clientOrderDraft?.quantities.get(product.id)) }))
+    .filter((line) => Number.isFinite(line.qty) && line.qty > 0);
+  const subtotal = Math.round(selected.reduce(
+    (sum, line) => sum + Number(line.product.price) * line.qty, 0
+  ) * 100) / 100;
+  const zone = clientOrderZone();
+  const deliveryFee = zone && subtotal < Number(zone.freeDeliveryThreshold)
+    ? Number(zone.fee) || 0
+    : 0;
+  return {
+    selected,
+    subtotal,
+    deliveryFee: Math.round(deliveryFee * 100) / 100,
+    total: Math.round((subtotal + deliveryFee) * 100) / 100,
+  };
+}
+
+function clientOrderValidation(earliest, maximum) {
+  const errors = [];
+  const totals = clientOrderTotals();
+  if (totals.selected.length === 0) errors.push('Adăugați cel puțin un produs.');
+  for (const { product, qty } of totals.selected) {
+    if (!clientOrderQuantityValid(product, qty)) {
+      errors.push(`Cantitatea pentru ${product.name} nu respectă minimul sau pasul de comandă.`);
+    }
+  }
+  const zone = clientOrderZone();
+  if (!zone) errors.push('Alegeți zona de livrare.');
+  else if (totals.subtotal < Number(zone.minOrder || 0)) {
+    errors.push(`Comanda minimă pentru ${zone.name} este ${lei(Number(zone.minOrder))}.`);
+  }
+  if (!clientOrderDraft?.windowId) errors.push('Alegeți intervalul de livrare.');
+  if (!clientOrderDraft?.date) errors.push('Alegeți data livrării.');
+  else {
+    const parsed = new Date(`${clientOrderDraft.date}T00:00:00Z`);
+    if (!Number.isFinite(parsed.getTime())) errors.push('Data livrării nu este validă.');
+    else if (clientOrderDraft.date < earliest) errors.push(`Prima dată disponibilă este ${clientOrderDateLabel(earliest)}.`);
+    else if (clientOrderDraft.date > maximum) errors.push('Data livrării nu poate fi la mai mult de un an.');
+    else if (!clientOrderBusinessDays().has(parsed.getUTCDay())) {
+      errors.push('În ziua selectată nu efectuăm livrări.');
+    }
+  }
+  return errors;
+}
+
+function updateClientOrderSummary(resetDate = false) {
+  const form = document.getElementById('client-order-form');
+  if (!form || !clientOrderDraft) return;
+
+  form.querySelectorAll('[data-reorder-qty]').forEach((input) => {
+    const value = Number(input.value);
+    if (Number.isFinite(value) && value > 0) clientOrderDraft.quantities.set(input.dataset.productId, value);
+    else clientOrderDraft.quantities.delete(input.dataset.productId);
+  });
+  clientOrderDraft.zoneId = form.querySelector('#client-order-zone')?.value || '';
+  clientOrderDraft.windowId = form.querySelector('#client-order-window')?.value || '';
+
+  const earliest = clientOrderEarliestDate();
+  const maximum = clientOrderMaximumDate();
+  const dateInput = form.querySelector('#client-order-date');
+  dateInput.min = earliest;
+  dateInput.max = maximum;
+  if (resetDate && (!dateInput.value || dateInput.value < earliest)) dateInput.value = earliest;
+  clientOrderDraft.date = dateInput.value;
+
+  const totals = clientOrderTotals();
+  form.querySelectorAll('[data-reorder-product]').forEach((row) => {
+    const product = clientOrderProducts().find((candidate) => candidate.id === row.dataset.productId);
+    if (!product) return;
+    const qty = Number(clientOrderDraft.quantities.get(product.id)) || 0;
+    row.classList.toggle('selected', qty > 0);
+    const lineTotal = row.querySelector('[data-reorder-line-total]');
+    lineTotal.textContent = qty > 0 ? lei(Math.round(Number(product.price) * qty * 100) / 100) : '';
+  });
+
+  const zone = clientOrderZone();
+  const count = totals.selected.length;
+  document.getElementById('client-order-selected-count').textContent =
+    `${count} ${count === 1 ? 'produs selectat' : 'produse selectate'}`;
+  document.getElementById('client-order-subtotal').textContent = lei(totals.subtotal);
+  document.getElementById('client-order-fee').textContent = totals.deliveryFee > 0 ? lei(totals.deliveryFee) : 'Gratuită';
+  document.getElementById('client-order-total').textContent = lei(totals.total);
+  document.getElementById('client-order-date-help').textContent =
+    `Prima dată disponibilă pentru produsele selectate: ${clientOrderDateLabel(earliest)}.`;
+  document.getElementById('client-order-zone-help').textContent = zone
+    ? (Number(zone.fee) > 0
+      ? `Livrare ${lei(Number(zone.fee))}; gratuită de la ${lei(Number(zone.freeDeliveryThreshold || 0))}.`
+      : 'Livrare gratuită.')
+    : '';
+  document.getElementById('client-order-minimum').textContent =
+    zone && totals.subtotal < Number(zone.minOrder || 0)
+      ? `Mai adăugați produse de ${lei(Math.round((Number(zone.minOrder) - totals.subtotal) * 100) / 100)} pentru minimul zonei.`
+      : '';
+
+  const errors = clientOrderValidation(earliest, maximum);
+  clientOrderDraft.valid = errors.length === 0;
+  const errorBox = document.getElementById('client-order-error');
+  errorBox.innerHTML = clientOrderDraft.showErrors && errors.length
+    ? `<div class="msg msg-error">${esc(errors[0])}</div>`
+    : '';
+  const submit = document.getElementById('client-order-submit');
+  submit.disabled = !clientOrderDraft.valid || clientOrderDraft.submitting;
+  submit.textContent = clientOrderDraft.submitting
+    ? 'Se plasează comanda…'
+    : `Plasează comanda · ${lei(totals.total)}`;
+  submit.title = errors[0] || '';
+}
+
+function renderClientOrderForm() {
+  if (!clientOrderDraft) return;
+  const client = clientOrderDraft.client;
+  const available = clientOrderProducts();
+  const lastItems = client.lastOrder?.items || [];
+  const restoredIds = new Set(clientOrderDraft.quantities.keys());
+  const unavailableCount = lastItems.filter((item) =>
+    !available.some((product) => product.id === item.productId
+      || (product.name === item.name && product.unit === item.unit))
+  ).length;
+  const zones = orderingConfig.deliveryZones || [];
+  const windows = orderingConfig.deliveryWindows || [];
+  const locationSaved = Boolean(client.lastOrder?.delivery?.location);
+
+  document.getElementById('client-order-title').textContent = `Comandă nouă pentru ${client.name}`;
+  document.getElementById('client-order-subtitle').textContent =
+    [client.company, client.phone].filter(Boolean).join(' · ');
+
+  document.getElementById('client-order-content').innerHTML = `
+    <form id="client-order-form" class="client-order-form" novalidate>
+      <div class="client-order-customer">
+        <div>
+          <b>${esc(client.name)}${client.company ? ` · ${esc(client.company)}` : ''}</b>
+          <span>📍 ${esc(client.address)}, ${esc(client.city)} · 📞 ${esc(client.phone)}</span>
+        </div>
+        ${client.lastOrder ? `<span class="badge badge-confirmata">Bază: ${esc(client.lastOrder.number)}</span>` : ''}
+      </div>
+
+      <section class="client-order-section">
+        <div class="client-order-section-title">
+          <span class="client-order-step">1</span>
+          <div><h3>Livrare</h3><p>Data este limitată automat după zonă și produsele alese.</p></div>
+        </div>
+        <div class="form-grid client-order-delivery-grid">
+          <div class="field">
+            <label for="client-order-zone">Zonă</label>
+            <select id="client-order-zone">
+              ${zones.map((zone) => `<option value="${esc(zone.id)}" ${zone.id === clientOrderDraft.zoneId ? 'selected' : ''}>${esc(zone.name)}</option>`).join('')}
+            </select>
+            <span class="field-help" id="client-order-zone-help"></span>
+          </div>
+          <div class="field">
+            <label for="client-order-date">Data livrării</label>
+            <input id="client-order-date" type="date" value="${esc(clientOrderDraft.date || '')}" required>
+            <span class="field-help" id="client-order-date-help"></span>
+          </div>
+          <div class="field">
+            <label for="client-order-window">Interval</label>
+            <select id="client-order-window" required>
+              <option value="">Alege intervalul</option>
+              ${windows.map((windowOption) => `<option value="${esc(windowOption.id)}" ${windowOption.id === clientOrderDraft.windowId ? 'selected' : ''}>${esc(windowOption.label)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="client-order-location ${locationSaved ? 'has-pin' : ''}">
+          ${locationSaved
+            ? '✓ Se refolosește pinul exact de livrare salvat la ultima comandă.'
+            : 'Se folosește adresa salvată. Acest client nu are încă un pin exact de livrare.'}
+        </div>
+      </section>
+
+      <section class="client-order-section">
+        <div class="client-order-section-title client-order-products-title">
+          <span class="client-order-step">2</span>
+          <div><h3>Produse și cantități</h3><p>Prețurile și disponibilitatea sunt cele curente.</p></div>
+          <span id="client-order-selected-count" class="client-order-selected-count"></span>
+        </div>
+        <div class="client-order-product-tools">
+          <input id="client-order-product-search" type="search" placeholder="🔍 Caută produs..." autocomplete="off">
+          <button type="button" class="btn-small" id="client-order-restore" ${lastItems.length ? '' : 'disabled'}>↻ Ultima comandă</button>
+          <button type="button" class="btn-small" id="client-order-clear">Golește</button>
+        </div>
+        ${unavailableCount > 0 ? `<p class="client-order-notice">${unavailableCount} ${unavailableCount === 1 ? 'produs din ultima comandă nu mai este disponibil și a fost omis.' : 'produse din ultima comandă nu mai sunt disponibile și au fost omise.'}</p>` : ''}
+        <div class="client-order-products" id="client-order-products">
+          ${available.map((product) => {
+            const qty = Number(clientOrderDraft.quantities.get(product.id)) || 0;
+            const minimum = Number(product.minQty) > 0 ? Number(product.minQty) : 1;
+            const step = Number(product.step) > 0 ? Number(product.step) : 1;
+            const search = normalizedClientOrderSearch(`${product.name} ${product.category || ''}`);
+            return `
+              <div class="client-order-product ${restoredIds.has(product.id) ? 'selected' : ''}" data-reorder-product data-product-id="${esc(product.id)}" data-search="${esc(search)}">
+                <div class="client-order-product-info">
+                  <b>${esc(product.name)}</b>
+                  <span>${esc(product.category || 'Alte produse')} · ${lei(Number(product.price))} / ${esc(product.unit)}</span>
+                  <small>Minim ${minimum} ${esc(product.unit)} · pas ${step} ${esc(product.unit)}</small>
+                </div>
+                <div class="qty-row compact client-order-qty">
+                  <button type="button" data-reorder-adjust data-direction="-1" aria-label="Scade ${esc(product.name)}">−</button>
+                  <input type="number" inputmode="decimal" min="0" max="10000" step="${step}" value="${qty || ''}" placeholder="0" data-reorder-qty data-product-id="${esc(product.id)}" aria-label="Cantitate ${esc(product.name)}">
+                  <button type="button" data-reorder-adjust data-direction="1" aria-label="Adaugă ${esc(product.name)}">+</button>
+                </div>
+                <strong class="client-order-line-total" data-reorder-line-total></strong>
+              </div>`;
+          }).join('')}
+          ${available.length ? '' : '<div class="client-order-empty">Nu există produse disponibile momentan.</div>'}
+        </div>
+        <div class="client-order-empty hidden" id="client-order-search-empty">Niciun produs nu corespunde căutării.</div>
+      </section>
+
+      <section class="client-order-section client-order-notes">
+        <label for="client-order-notes"><b>Observații pentru livrare</b> <span class="optional">opțional</span></label>
+        <textarea id="client-order-notes" rows="2" maxlength="1000" placeholder="De exemplu: sunați la sosire">${esc(client.lastOrder?.notes || '')}</textarea>
+      </section>
+
+      <div id="client-order-error" role="alert"></div>
+      <footer class="client-order-summary">
+        <div>
+          <dl>
+            <div><dt>Produse</dt><dd id="client-order-subtotal">0,00 lei</dd></div>
+            <div><dt>Livrare</dt><dd id="client-order-fee">-</dd></div>
+            <div class="grand"><dt>Total</dt><dd id="client-order-total">0,00 lei</dd></div>
+          </dl>
+          <p id="client-order-minimum"></p>
+        </div>
+        <div class="client-order-submit-wrap">
+          <button type="submit" class="btn btn-primary" id="client-order-submit">Plasează comanda</button>
+          <small>Clientul primește notificarea obișnuită de comandă primită.</small>
+        </div>
+      </footer>
+    </form>`;
+
+  bindClientOrderForm();
+  updateClientOrderSummary(true);
+}
+
+function bindClientOrderForm() {
+  const form = document.getElementById('client-order-form');
+  if (!form || !clientOrderDraft) return;
+  form.onsubmit = submitClientOrder;
+  form.querySelector('#client-order-zone').onchange = () => updateClientOrderSummary(true);
+  form.querySelector('#client-order-window').onchange = () => updateClientOrderSummary(false);
+  form.querySelector('#client-order-date').onchange = () => updateClientOrderSummary(false);
+
+  form.querySelectorAll('[data-reorder-qty]').forEach((input) => {
+    input.oninput = () => updateClientOrderSummary(true);
+  });
+  form.querySelectorAll('[data-reorder-adjust]').forEach((button) => {
+    button.onclick = () => {
+      const row = button.closest('[data-reorder-product]');
+      const product = clientOrderProducts().find((candidate) => candidate.id === row.dataset.productId);
+      const input = row.querySelector('[data-reorder-qty]');
+      const minimum = Number(product.minQty) > 0 ? Number(product.minQty) : 1;
+      const step = Number(product.step) > 0 ? Number(product.step) : 1;
+      const current = Number(input.value) || 0;
+      const direction = Number(button.dataset.direction);
+      const next = direction > 0
+        ? (current > 0 ? roundQuantity(current + step) : minimum)
+        : (current <= minimum ? 0 : Math.max(minimum, roundQuantity(current - step)));
+      input.value = next > 0 ? next : '';
+      updateClientOrderSummary(true);
+    };
+  });
+
+  const search = form.querySelector('#client-order-product-search');
+  search.oninput = () => {
+    const needle = normalizedClientOrderSearch(search.value.trim());
+    let visible = 0;
+    form.querySelectorAll('[data-reorder-product]').forEach((row) => {
+      const matches = !needle || row.dataset.search.includes(needle);
+      row.classList.toggle('hidden', !matches);
+      if (matches) visible += 1;
+    });
+    form.querySelector('#client-order-search-empty').classList.toggle('hidden', visible > 0);
+  };
+  form.querySelector('#client-order-clear').onclick = () => {
+    clientOrderDraft.quantities = new Map();
+    renderClientOrderForm();
+  };
+  form.querySelector('#client-order-restore').onclick = () => {
+    clientOrderDraft.quantities = seedClientOrderQuantities(clientOrderDraft.client);
+    renderClientOrderForm();
+  };
+}
+
+function openClientOrder(client) {
+  const zones = orderingConfig.deliveryZones || [];
+  const windows = orderingConfig.deliveryWindows || [];
+  const previousDelivery = client.lastOrder?.delivery || {};
+  clientOrderDraft = {
+    client,
+    quantities: seedClientOrderQuantities(client),
+    zoneId: zones.some((zone) => zone.id === previousDelivery.zoneId)
+      ? previousDelivery.zoneId
+      : zones[0]?.id || '',
+    windowId: windows.some((windowOption) => windowOption.id === previousDelivery.windowId)
+      ? previousDelivery.windowId
+      : windows[0]?.id || '',
+    date: '',
+    valid: false,
+    showErrors: false,
+    submitting: false,
+  };
+  renderClientOrderForm();
+  const dialog = document.getElementById('client-order-dialog');
+  if (typeof dialog.showModal === 'function') dialog.showModal();
+  else dialog.setAttribute('open', '');
+  document.getElementById('client-order-product-search')?.focus();
+}
+
+function closeClientOrderDialog() {
+  if (clientOrderDraft?.submitting) return;
+  const dialog = document.getElementById('client-order-dialog');
+  if (typeof dialog.close === 'function' && dialog.open) dialog.close();
+  else dialog.removeAttribute('open');
+  clientOrderDraft = null;
+}
+
+function showAdminToast(message) {
+  const toast = document.getElementById('admin-toast');
+  clearTimeout(adminToastTimer);
+  toast.textContent = message;
+  toast.classList.remove('hidden');
+  adminToastTimer = setTimeout(() => toast.classList.add('hidden'), 6500);
+}
+
+async function refreshAfterClientOrder() {
+  const [ordersResponse, clientsResponse] = await Promise.all([
+    api('/api/admin/orders'),
+    api('/api/admin/clients'),
+  ]);
+  if (ordersResponse.ok) {
+    orders = await ordersResponse.json();
+    renderNavBadge();
+    renderFilter();
+    renderOrders();
+    renderMarketingCount();
+  }
+  if (clientsResponse.ok) {
+    clients = await clientsResponse.json();
+    clientsLoadedOnce = true;
+    renderClients();
+  }
+  if (statsLoadedOnce && !document.getElementById('section-statistici').classList.contains('hidden')) {
+    loadStats();
+  }
+}
+
+async function submitClientOrder(event) {
+  event.preventDefault();
+  if (!clientOrderDraft || clientOrderDraft.submitting) return;
+  clientOrderDraft.showErrors = true;
+  updateClientOrderSummary(false);
+  if (!clientOrderDraft.valid) {
+    document.getElementById('client-order-error')?.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+
+  const draft = clientOrderDraft;
+  const totals = clientOrderTotals();
+  const form = document.getElementById('client-order-form');
+  draft.submitting = true;
+  updateClientOrderSummary(false);
+  try {
+    const response = await api(`/api/admin/clients/${encodeURIComponent(draft.client.key)}/orders`, {
+      method: 'POST',
+      body: JSON.stringify({
+        items: totals.selected.map(({ product, qty }) => ({ productId: product.id, qty })),
+        delivery: {
+          zoneId: draft.zoneId,
+          windowId: draft.windowId,
+          date: draft.date,
+        },
+        notes: form.querySelector('#client-order-notes').value.trim(),
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (data.earliestDeliveryDate) {
+        const dateInput = form.querySelector('#client-order-date');
+        dateInput.min = data.earliestDeliveryDate;
+        if (dateInput.value < data.earliestDeliveryDate) {
+          dateInput.value = data.earliestDeliveryDate;
+          draft.date = data.earliestDeliveryDate;
+        }
+      }
+      throw new Error(data.error || 'Comanda nu a putut fi plasată.');
+    }
+
+    const clientName = draft.client.name;
+    draft.submitting = false;
+    closeClientOrderDialog();
+    await refreshAfterClientOrder();
+    showAdminToast(`✓ Comanda ${data.number} pentru ${clientName} a fost plasată cu succes.`);
+  } catch (error) {
+    draft.submitting = false;
+    if (clientOrderDraft === draft) {
+      updateClientOrderSummary(false);
+      document.getElementById('client-order-error').innerHTML =
+        `<div class="msg msg-error">${esc(error.message || 'Comanda nu a putut fi plasată.')}</div>`;
+    }
+  }
+}
+
 function clientBodyHtml(c) {
   const history = c.orders.map((o) => `<tr>
       <td><b>${esc(o.number)}</b></td>
@@ -1021,6 +1541,7 @@ function clientBodyHtml(c) {
           <textarea data-client-notes rows="3" class="template-input" placeholder="ex: preferă livrarea dimineața, plătește prin transfer...">${esc(c.notes || '')}</textarea>
           <div data-client-notes-msg></div>
           <div class="actions" style="margin-top:8px;">
+            <button class="btn-small save" type="button" data-client-new-order>＋ Comandă nouă</button>
             <button class="btn-small save" data-save-client-notes>💾 Salvează notițele</button>
           </div>
         </div>
@@ -1059,6 +1580,7 @@ function renderClients() {
           <span class="meta">${TYPE_LABELS[c.type] || 'Altul'} · ${esc(c.city)} · ${esc(c.phone)} · ${c.ordersCount} ${c.ordersCount === 1 ? 'comandă' : 'comenzi'}</span>
         </div>
         <div class="right">
+          <button class="btn-small save client-order-start" type="button" data-client-new-order>＋ Comandă nouă</button>
           <span class="total">${lei(c.totalSpent)}</span>
           ${c.unpaidTotal > 0 ? `<span class="badge badge-anulata">Restanțe ${lei(c.unpaidTotal)}</span>` : ''}
           ${c.notes ? '<span class="badge badge-confirmata">📝 notițe</span>' : ''}
@@ -1074,6 +1596,13 @@ function renderClients() {
       else clientExpanded.add(c.key);
       renderClients();
     };
+
+    card.querySelectorAll('[data-client-new-order]').forEach((button) => {
+      button.onclick = (event) => {
+        event.stopPropagation();
+        openClientOrder(c);
+      };
+    });
 
     const saveBtn = card.querySelector('[data-save-client-notes]');
     if (saveBtn) saveBtn.onclick = async (e) => {
@@ -1910,6 +2439,16 @@ document.getElementById('password').addEventListener('keydown', (e) => {
 document.getElementById('refresh-btn').onclick = loadAll;
 document.getElementById('harvest-btn').onclick = buildHarvestSheet;
 document.getElementById('client-search').oninput = (e) => { clientSearch = e.target.value; renderClients(); };
+document.getElementById('client-order-close').onclick = closeClientOrderDialog;
+document.getElementById('client-order-dialog').addEventListener('cancel', (event) => {
+  if (clientOrderDraft?.submitting) event.preventDefault();
+});
+document.getElementById('client-order-dialog').addEventListener('close', () => {
+  clientOrderDraft = null;
+});
+document.getElementById('client-order-dialog').addEventListener('click', (event) => {
+  if (event.target === event.currentTarget) closeClientOrderDialog();
+});
 document.getElementById('save-settings-btn').onclick = saveCompanySettings;
 document.getElementById('save-postmark-btn').onclick = savePostmark;
 document.getElementById('test-email-btn').onclick = sendTestEmail;

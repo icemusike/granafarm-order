@@ -523,6 +523,22 @@
     </div>
   </main>
 
+  <dialog id="client-order-dialog" class="client-order-dialog" aria-labelledby="client-order-title">
+    <div class="client-order-shell">
+      <header class="client-order-header">
+        <div>
+          <p class="eyebrow">Comandă din panoul de administrare</p>
+          <h2 id="client-order-title">Comandă nouă pentru client</h2>
+          <p id="client-order-subtitle"></p>
+        </div>
+        <button type="button" class="dialog-close" id="client-order-close" aria-label="Închide">&times;</button>
+      </header>
+      <div id="client-order-content"></div>
+    </div>
+  </dialog>
+
+  <div class="admin-toast hidden" id="admin-toast" role="status" aria-live="polite"></div>
+
   <footer class="site">GranaFarm, panou de administrare</footer>
 
   <script src="/admin.js"></script>

@@ -581,7 +581,7 @@ app.get('/api/ordering-config', asyncRoute(async (req, res) => {
   res.json(config);
 }));
 
-app.post('/api/orders', asyncRoute(async (req, res) => {
+async function createOrder(req, res, options = {}) {
   const { customer, items, delivery } = req.body || {};
   if (!customer || typeof customer !== 'object' || Array.isArray(customer)) {
     return validationError(res, 'customer', 'Datele clientului lipsesc.');
@@ -766,7 +766,9 @@ app.post('/api/orders', asyncRoute(async (req, res) => {
       formattedAddress: String(delivery.location.formattedAddress || '').trim().slice(0, 250),
       placeId: String(delivery.location.placeId || '').trim().slice(0, 200),
     };
-  } else if (config.maps.enabled) return validationError(res, 'delivery.location', 'Alegeți pinul exact pentru livrare pe hartă.');
+  } else if (config.maps.enabled && options.requireDeliveryLocation !== false) {
+    return validationError(res, 'delivery.location', 'Alegeți pinul exact pentru livrare pe hartă.');
+  }
   const tracking = generateTrackingToken();
   const order = await storage.createOrder({
     customer: customerData,
@@ -795,7 +797,9 @@ app.post('/api/orders', asyncRoute(async (req, res) => {
     canReorder: ['restaurant', 'magazin', 'angro'].includes(customerData.type),
     trackingUrl,
   });
-}));
+}
+
+app.post('/api/orders', asyncRoute(createOrder));
 
 app.get('/api/orders/track/:token', asyncRoute(async (req, res) => {
   res.setHeader('Cache-Control', 'private, no-store, max-age=0');
@@ -1080,6 +1084,24 @@ function aggregateClients(orders, clientData) {
     client.address = order.customer.address || '';
     client.type = order.customer.type || 'altul';
     client.lastOrderAt = order.createdAt;
+    client.lastOrder = {
+      id: order.id,
+      number: order.number,
+      items: (order.items || []).map((item) => ({
+        productId: item.productId,
+        name: item.name,
+        unit: item.unit,
+        qty: Number(item.qty),
+      })),
+      delivery: {
+        zoneId: order.delivery && order.delivery.zoneId || '',
+        zoneName: order.delivery && order.delivery.zoneName || '',
+        windowId: order.delivery && order.delivery.windowId || '',
+        windowLabel: order.delivery && order.delivery.windowLabel || '',
+        location: order.delivery && order.delivery.location || null,
+      },
+      notes: order.customer.notes || '',
+    };
     client.orders.push({
       id: order.id,
       number: order.number,
@@ -1132,6 +1154,51 @@ function aggregateClients(orders, clientData) {
 app.get('/api/admin/clients', requireAdmin, asyncRoute(async (req, res) => {
   const [orders, clientData] = await Promise.all([storage.listOrders(), storage.listClientData()]);
   res.json(aggregateClients(orders, clientData));
+}));
+
+app.post('/api/admin/clients/:key/orders', requireAdmin, asyncRoute(async (req, res) => {
+  const key = String(req.params.key || '');
+  if (!CLIENT_KEY_RE.test(key)) {
+    return res.status(400).json({ error: 'Identificatorul clientului nu este valid.' });
+  }
+
+  const previousOrders = await storage.listOrders();
+  const latestOrder = previousOrders.find((order) =>
+    normalizePhone(order.customer && order.customer.phone || '') === key
+  );
+  if (!latestOrder) return res.status(404).json({ error: 'Clientul nu a fost găsit.' });
+
+  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+    ? req.body
+    : {};
+  if (body.delivery != null && (typeof body.delivery !== 'object' || Array.isArray(body.delivery))) {
+    return validationError(res, 'delivery', 'Datele de livrare nu sunt valide.');
+  }
+
+  const previousDelivery = latestOrder.delivery || {};
+  const requestedDelivery = body.delivery || {};
+  const delivery = {
+    zoneId: requestedDelivery.zoneId || previousDelivery.zoneId || '',
+    windowId: requestedDelivery.windowId || previousDelivery.windowId || '',
+    date: requestedDelivery.date || '',
+  };
+  if (Object.prototype.hasOwnProperty.call(requestedDelivery, 'location')) {
+    delivery.location = requestedDelivery.location;
+  } else if (previousDelivery.location) {
+    delivery.location = previousDelivery.location;
+  }
+
+  req.body = {
+    ...body,
+    customer: {
+      ...latestOrder.customer,
+      notes: Object.prototype.hasOwnProperty.call(body, 'notes')
+        ? body.notes
+        : latestOrder.customer.notes || '',
+    },
+    delivery,
+  };
+  return createOrder(req, res, { requireDeliveryLocation: false });
 }));
 
 app.patch('/api/admin/clients/:key', requireAdmin, asyncRoute(async (req, res) => {
