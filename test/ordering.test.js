@@ -224,7 +224,56 @@ test('ordering API keeps pricing authoritative and tracking private', async (t) 
   );
 
   await new Promise((resolve) => setTimeout(resolve, 100));
-  const smsLog = await fetch(`${baseUrl}/api/admin/sms-log`, { headers: adminHeaders }).then((response) => response.json());
-  assert.ok(smsLog.log.some((entry) => entry.kind === 'comanda_primita_client'));
-  assert.ok(smsLog.log.every((entry) => !/\/track\/[A-Za-z0-9_-]{43}/.test(entry.body || '')));
+  const smsBeforeHistorical = await fetch(`${baseUrl}/api/admin/sms-log`, { headers: adminHeaders })
+    .then((response) => response.json());
+  assert.ok(smsBeforeHistorical.log.some((entry) => entry.kind === 'comanda_primita_client'));
+  assert.ok(smsBeforeHistorical.log.every((entry) => !/\/track\/[A-Za-z0-9_-]{43}/.test(entry.body || '')));
+
+  const adminProducts = await fetch(`${baseUrl}/api/admin/products`, { headers: adminHeaders })
+    .then((response) => response.json());
+  const unavailableProduct = adminProducts.find((entry) => !entry.available && Number(entry.price) > 0);
+  assert.ok(unavailableProduct);
+  const historicalDate = '2025-01-04';
+  const historicalPayload = {
+    historical: true,
+    paid: true,
+    paymentMethod: 'transfer',
+    items: [{ productId: unavailableProduct.id, qty: 0.25 }],
+    delivery: { zoneId: zone.id, windowId: deliveryWindow.id, date: historicalDate },
+    notes: 'Comandă primită prin WhatsApp și livrată anterior',
+  };
+  const historicalResponse = await fetch(
+    `${baseUrl}/api/admin/clients/${encodeURIComponent(client.key)}/orders`,
+    {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify(historicalPayload),
+    },
+  );
+  assert.equal(historicalResponse.status, 201);
+  const historical = await historicalResponse.json();
+  assert.equal(historical.historical, true);
+  assert.equal(historical.status, 'livrata');
+  assert.equal(historical.paid, true);
+  assert.equal(historical.deliveryDate, historicalDate);
+
+  const ordersAfterHistorical = await fetch(`${baseUrl}/api/admin/orders`, { headers: adminHeaders })
+    .then((response) => response.json());
+  const historicalOrder = ordersAfterHistorical.find((order) => order.number === historical.number);
+  assert.equal(historicalOrder.createdAt, `${historicalDate}T12:00:00.000Z`);
+  assert.equal(historicalOrder.status, 'livrata');
+  assert.deepEqual(historicalOrder.payment, {
+    paid: true,
+    method: 'transfer',
+    paidAt: `${historicalDate}T12:00:00.000Z`,
+  });
+  assert.deepEqual(
+    historicalOrder.items.map((item) => ({ productId: item.productId, qty: item.qty })),
+    historicalPayload.items,
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const smsAfterHistorical = await fetch(`${baseUrl}/api/admin/sms-log`, { headers: adminHeaders })
+    .then((response) => response.json());
+  assert.equal(smsAfterHistorical.log.length, smsBeforeHistorical.log.length);
 });

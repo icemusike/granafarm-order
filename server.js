@@ -624,6 +624,9 @@ async function createOrder(req, res, options = {}) {
 
   const orderItems = [];
   const seenProductIds = new Set();
+  const adminProducts = options.allowUnavailableProducts
+    ? new Map((await storage.listProducts()).map((product) => [product.id, product]))
+    : null;
   let productLeadDays = 0;
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
@@ -639,12 +642,16 @@ async function createOrder(req, res, options = {}) {
     }
     seenProductIds.add(productId);
 
-    const product = await storage.getAvailableProduct(productId);
+    const product = adminProducts
+      ? adminProducts.get(productId)
+      : await storage.getAvailableProduct(productId);
     if (!product) {
       return validationError(
         res,
         `items.${index}.productId`,
-        'Produsul nu mai este disponibil. Reîncărcați catalogul.'
+        options.allowUnavailableProducts
+          ? 'Produsul nu mai există în catalog.'
+          : 'Produsul nu mai este disponibil. Reîncărcați catalogul.'
       );
     }
     const qtyInputIsNumeric = typeof item.qty === 'number'
@@ -656,10 +663,10 @@ async function createOrder(req, res, options = {}) {
       return validationError(
         res,
         `items.${index}.qty`,
-        `Cantitatea pentru ${product.name} trebuie să fie între ${minQty} și ${MAX_ITEM_QTY}.`
+        `Cantitatea pentru ${product.name} trebuie să fie mai mare decât 0 și cel mult ${MAX_ITEM_QTY}.`
       );
     }
-    if (qty < minQty - 1e-8) {
+    if (!options.allowFlexibleQuantities && qty < minQty - 1e-8) {
       return validationError(
         res,
         `items.${index}.qty`,
@@ -673,7 +680,7 @@ async function createOrder(req, res, options = {}) {
         `Cantitatea pentru ${product.name} poate avea cel mult două zecimale.`
       );
     }
-    if (!isStepAligned(qty, minQty, step)) {
+    if (!options.allowFlexibleQuantities && !isStepAligned(qty, minQty, step)) {
       return validationError(
         res,
         `items.${index}.qty`,
@@ -706,24 +713,26 @@ async function createOrder(req, res, options = {}) {
   if (!parsedDeliveryDate) {
     return validationError(res, 'delivery.date', 'Selectați o dată de livrare validă.');
   }
-  if (!config.businessDays.includes(parsedDeliveryDate.getUTCDay())) {
-    return validationError(res, 'delivery.date', 'În ziua selectată nu efectuăm livrări.');
+  if (!options.allowAnyDeliveryDate) {
+    if (!config.businessDays.includes(parsedDeliveryDate.getUTCDay())) {
+      return validationError(res, 'delivery.date', 'În ziua selectată nu efectuăm livrări.');
+    }
+    const effectiveLeadDays = Math.max(zone.leadDays, productLeadDays);
+    const earliestDate = earliestDeliveryDate(config, effectiveLeadDays);
+    if (deliveryDate < earliestDate) {
+      return validationError(
+        res,
+        'delivery.date',
+        `Prima dată disponibilă pentru această comandă este ${earliestDate}.`,
+        { earliestDeliveryDate: earliestDate }
+      );
+    }
+    const today = parseIsoDate(getRomaniaNowParts().date);
+    if (parsedDeliveryDate.getTime() > today.getTime() + 365 * DAY_MS) {
+      return validationError(res, 'delivery.date', 'Data livrării nu poate fi la mai mult de un an.');
+    }
   }
-  const effectiveLeadDays = Math.max(zone.leadDays, productLeadDays);
-  const earliestDate = earliestDeliveryDate(config, effectiveLeadDays);
-  if (deliveryDate < earliestDate) {
-    return validationError(
-      res,
-      'delivery.date',
-      `Prima dată disponibilă pentru această comandă este ${earliestDate}.`,
-      { earliestDeliveryDate: earliestDate }
-    );
-  }
-  const today = parseIsoDate(getRomaniaNowParts().date);
-  if (parsedDeliveryDate.getTime() > today.getTime() + 365 * DAY_MS) {
-    return validationError(res, 'delivery.date', 'Data livrării nu poate fi la mai mult de un an.');
-  }
-  if (subtotal < zone.minOrder) {
+  if (!options.skipMinimumOrder && subtotal < zone.minOrder) {
     return validationError(
       res,
       'items',
@@ -779,13 +788,18 @@ async function createOrder(req, res, options = {}) {
     delivery: deliveryData,
     trackingHash: tracking.hash,
     trackingUrl: `/track/${tracking.token}`,
+    createdAt: options.createdAt,
+    status: options.initialStatus || 'noua',
+    payment: options.payment || null,
   });
   const trackingUrl = `/track/${tracking.token}`;
   const notificationTrackingUrl = buildNotificationTrackingUrl(req, trackingUrl);
-  fireAndForget(Promise.all([
-    notifyOwnerNewOrder(order),
-    notifyClientOrderReceived(order, notificationTrackingUrl),
-  ]));
+  if (options.sendNotifications !== false) {
+    fireAndForget(Promise.all([
+      notifyOwnerNewOrder(order),
+      notifyClientOrderReceived(order, notificationTrackingUrl),
+    ]));
+  }
   res.setHeader('Cache-Control', 'no-store');
   res.status(201).json({
     number: order.number,
@@ -794,6 +808,9 @@ async function createOrder(req, res, options = {}) {
     total: order.total,
     deliveryDate,
     deliveryWindow: deliveryWindow.label,
+    status: order.status,
+    paid: Boolean(order.payment && order.payment.paid),
+    historical: options.historical === true,
     canReorder: ['restaurant', 'magazin', 'angro'].includes(customerData.type),
     trackingUrl,
   });
@@ -1188,6 +1205,24 @@ app.post('/api/admin/clients/:key/orders', requireAdmin, asyncRoute(async (req, 
     delivery.location = previousDelivery.location;
   }
 
+  const historical = body.historical === true;
+  const historicalDate = historical ? parseIsoDate(String(delivery.date || '')) : null;
+  const historicalCreatedAt = historicalDate
+    ? `${delivery.date}T12:00:00.000Z`
+    : undefined;
+  let payment = null;
+  if (historical && body.paid === true) {
+    const method = String(body.paymentMethod || '');
+    if (!PAYMENT_METHODS.includes(method)) {
+      return validationError(res, 'paymentMethod', 'Selectați metoda de plată.');
+    }
+    payment = {
+      paid: true,
+      method,
+      paidAt: historicalCreatedAt || new Date().toISOString(),
+    };
+  }
+
   req.body = {
     ...body,
     customer: {
@@ -1198,7 +1233,18 @@ app.post('/api/admin/clients/:key/orders', requireAdmin, asyncRoute(async (req, 
     },
     delivery,
   };
-  return createOrder(req, res, { requireDeliveryLocation: false });
+  return createOrder(req, res, {
+    requireDeliveryLocation: false,
+    allowAnyDeliveryDate: historical,
+    skipMinimumOrder: historical,
+    allowUnavailableProducts: historical,
+    allowFlexibleQuantities: historical,
+    initialStatus: historical ? 'livrata' : 'noua',
+    createdAt: historicalCreatedAt,
+    payment,
+    sendNotifications: !historical,
+    historical,
+  });
 }));
 
 app.patch('/api/admin/clients/:key', requireAdmin, asyncRoute(async (req, res) => {

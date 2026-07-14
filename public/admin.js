@@ -988,11 +988,13 @@ function clientMatchesSearch(c, needle) {
 const roDateTime = (iso) => new Date(iso).toLocaleDateString('ro-RO', { dateStyle: 'medium' });
 
 function clientOrderProducts() {
-  return products.filter((product) =>
-    product.available
-    && product.stockStatus !== 'out_of_stock'
-    && Number(product.price) > 0
-  );
+  const historical = clientOrderDraft?.historical === true;
+  return products.filter((product) => {
+    const price = Number(product.price);
+    if (!Number.isFinite(price) || price < 0) return false;
+    if (historical) return true;
+    return product.available && product.stockStatus !== 'out_of_stock' && price > 0;
+  });
 }
 
 const roundQuantity = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
@@ -1001,8 +1003,10 @@ function clientOrderQuantityValid(product, value) {
   const qty = Number(value);
   const minimum = Number(product.minQty) > 0 ? Number(product.minQty) : 1;
   const step = Number(product.step) > 0 ? Number(product.step) : 1;
-  if (!Number.isFinite(qty) || qty < minimum || qty > 10000) return false;
+  if (!Number.isFinite(qty) || qty <= 0 || qty > 10000) return false;
   if (Math.abs(qty - roundQuantity(qty)) > 1e-8) return false;
+  if (clientOrderDraft?.historical) return true;
+  if (qty < minimum) return false;
   const multiple = (qty - minimum) / step;
   return Math.abs(multiple - Math.round(multiple)) < 1e-8;
 }
@@ -1011,6 +1015,7 @@ function normalizedClientOrderQuantity(product, value) {
   const qty = Number(value);
   if (!Number.isFinite(qty) || qty <= 0) return 0;
   if (clientOrderQuantityValid(product, qty)) return roundQuantity(qty);
+  if (clientOrderDraft?.historical) return Math.min(10000, roundQuantity(qty));
   const minimum = Number(product.minQty) > 0 ? Number(product.minQty) : 1;
   const step = Number(product.step) > 0 ? Number(product.step) : 1;
   const steps = Math.max(0, Math.round((qty - minimum) / step));
@@ -1123,16 +1128,19 @@ function clientOrderTotals() {
 
 function clientOrderValidation(earliest, maximum) {
   const errors = [];
+  const historical = clientOrderDraft?.historical === true;
   const totals = clientOrderTotals();
   if (totals.selected.length === 0) errors.push('Adăugați cel puțin un produs.');
   for (const { product, qty } of totals.selected) {
     if (!clientOrderQuantityValid(product, qty)) {
-      errors.push(`Cantitatea pentru ${product.name} nu respectă minimul sau pasul de comandă.`);
+      errors.push(historical
+        ? `Cantitatea pentru ${product.name} trebuie să fie pozitivă și să aibă cel mult două zecimale.`
+        : `Cantitatea pentru ${product.name} nu respectă minimul sau pasul de comandă.`);
     }
   }
   const zone = clientOrderZone();
   if (!zone) errors.push('Alegeți zona de livrare.');
-  else if (totals.subtotal < Number(zone.minOrder || 0)) {
+  else if (!historical && totals.subtotal < Number(zone.minOrder || 0)) {
     errors.push(`Comanda minimă pentru ${zone.name} este ${lei(Number(zone.minOrder))}.`);
   }
   if (!clientOrderDraft?.windowId) errors.push('Alegeți intervalul de livrare.');
@@ -1140,11 +1148,14 @@ function clientOrderValidation(earliest, maximum) {
   else {
     const parsed = new Date(`${clientOrderDraft.date}T00:00:00Z`);
     if (!Number.isFinite(parsed.getTime())) errors.push('Data livrării nu este validă.');
-    else if (clientOrderDraft.date < earliest) errors.push(`Prima dată disponibilă este ${clientOrderDateLabel(earliest)}.`);
-    else if (clientOrderDraft.date > maximum) errors.push('Data livrării nu poate fi la mai mult de un an.');
-    else if (!clientOrderBusinessDays().has(parsed.getUTCDay())) {
+    else if (!historical && clientOrderDraft.date < earliest) errors.push(`Prima dată disponibilă este ${clientOrderDateLabel(earliest)}.`);
+    else if (!historical && clientOrderDraft.date > maximum) errors.push('Data livrării nu poate fi la mai mult de un an.');
+    else if (!historical && !clientOrderBusinessDays().has(parsed.getUTCDay())) {
       errors.push('În ziua selectată nu efectuăm livrări.');
     }
+  }
+  if (historical && clientOrderDraft?.paid && !PAYMENT_LABELS[clientOrderDraft.paymentMethod]) {
+    errors.push('Alegeți metoda de plată.');
   }
   return errors;
 }
@@ -1160,13 +1171,23 @@ function updateClientOrderSummary(resetDate = false) {
   });
   clientOrderDraft.zoneId = form.querySelector('#client-order-zone')?.value || '';
   clientOrderDraft.windowId = form.querySelector('#client-order-window')?.value || '';
+  clientOrderDraft.historical = Boolean(form.querySelector('#client-order-historical')?.checked);
+  clientOrderDraft.paid = Boolean(form.querySelector('#client-order-paid')?.checked);
+  clientOrderDraft.paymentMethod = form.querySelector('#client-order-payment-method')?.value || 'cash';
+  clientOrderDraft.notes = form.querySelector('#client-order-notes')?.value ?? clientOrderDraft.notes;
 
   const earliest = clientOrderEarliestDate();
   const maximum = clientOrderMaximumDate();
   const dateInput = form.querySelector('#client-order-date');
-  dateInput.min = earliest;
-  dateInput.max = maximum;
-  if (resetDate && (!dateInput.value || dateInput.value < earliest)) dateInput.value = earliest;
+  if (clientOrderDraft.historical) {
+    dateInput.removeAttribute('min');
+    dateInput.max = clientOrderRomaniaNow().date;
+    if (resetDate && (!dateInput.value || dateInput.value > dateInput.max)) dateInput.value = dateInput.max;
+  } else {
+    dateInput.min = earliest;
+    dateInput.max = maximum;
+    if (resetDate && (!dateInput.value || dateInput.value < earliest)) dateInput.value = earliest;
+  }
   clientOrderDraft.date = dateInput.value;
 
   const totals = clientOrderTotals();
@@ -1187,16 +1208,26 @@ function updateClientOrderSummary(resetDate = false) {
   document.getElementById('client-order-fee').textContent = totals.deliveryFee > 0 ? lei(totals.deliveryFee) : 'Gratuită';
   document.getElementById('client-order-total').textContent = lei(totals.total);
   document.getElementById('client-order-date-help').textContent =
-    `Prima dată disponibilă pentru produsele selectate: ${clientOrderDateLabel(earliest)}.`;
+    clientOrderDraft.historical
+      ? 'Puteți alege orice dată din trecut. Comanda va fi salvată direct ca livrată.'
+      : `Prima dată disponibilă pentru produsele selectate: ${clientOrderDateLabel(earliest)}.`;
   document.getElementById('client-order-zone-help').textContent = zone
     ? (Number(zone.fee) > 0
       ? `Livrare ${lei(Number(zone.fee))}; gratuită de la ${lei(Number(zone.freeDeliveryThreshold || 0))}.`
       : 'Livrare gratuită.')
     : '';
   document.getElementById('client-order-minimum').textContent =
-    zone && totals.subtotal < Number(zone.minOrder || 0)
+    !clientOrderDraft.historical && zone && totals.subtotal < Number(zone.minOrder || 0)
       ? `Mai adăugați produse de ${lei(Math.round((Number(zone.minOrder) - totals.subtotal) * 100) / 100)} pentru minimul zonei.`
       : '';
+  const paymentMethod = document.getElementById('client-order-payment-method');
+  if (paymentMethod) paymentMethod.disabled = !clientOrderDraft.paid;
+  const notificationNote = document.getElementById('client-order-notification-note');
+  if (notificationNote) {
+    notificationNote.textContent = clientOrderDraft.historical
+      ? 'Se salvează ca livrată, fără SMS, WhatsApp sau email de comandă nouă.'
+      : 'Clientul primește notificarea obișnuită de comandă primită.';
+  }
 
   const errors = clientOrderValidation(earliest, maximum);
   clientOrderDraft.valid = errors.length === 0;
@@ -1208,13 +1239,14 @@ function updateClientOrderSummary(resetDate = false) {
   submit.disabled = !clientOrderDraft.valid || clientOrderDraft.submitting;
   submit.textContent = clientOrderDraft.submitting
     ? 'Se plasează comanda…'
-    : `Plasează comanda · ${lei(totals.total)}`;
+    : `${clientOrderDraft.historical ? 'Adaugă în istoric' : 'Plasează comanda'} · ${lei(totals.total)}`;
   submit.title = errors[0] || '';
 }
 
 function renderClientOrderForm() {
   if (!clientOrderDraft) return;
   const client = clientOrderDraft.client;
+  const historical = clientOrderDraft.historical === true;
   const available = clientOrderProducts();
   const lastItems = client.lastOrder?.items || [];
   const restoredIds = new Set(clientOrderDraft.quantities.keys());
@@ -1240,6 +1272,14 @@ function renderClientOrderForm() {
         ${client.lastOrder ? `<span class="badge badge-confirmata">Bază: ${esc(client.lastOrder.number)}</span>` : ''}
       </div>
 
+      <label class="client-order-history-toggle">
+        <input id="client-order-historical" type="checkbox" ${historical ? 'checked' : ''}>
+        <span>
+          <b>Comandă deja livrată / adăugare în istoric</b>
+          <small>Permite o dată din trecut, produse indisponibile acum, cantități libere și ignoră minimul comenzii. Nu trimite notificări.</small>
+        </span>
+      </label>
+
       <section class="client-order-section">
         <div class="client-order-section-title">
           <span class="client-order-step">1</span>
@@ -1254,7 +1294,7 @@ function renderClientOrderForm() {
             <span class="field-help" id="client-order-zone-help"></span>
           </div>
           <div class="field">
-            <label for="client-order-date">Data livrării</label>
+            <label for="client-order-date">${historical ? 'Data livrării (în trecut)' : 'Data livrării'}</label>
             <input id="client-order-date" type="date" value="${esc(clientOrderDraft.date || '')}" required>
             <span class="field-help" id="client-order-date-help"></span>
           </div>
@@ -1263,6 +1303,20 @@ function renderClientOrderForm() {
             <select id="client-order-window" required>
               <option value="">Alege intervalul</option>
               ${windows.map((windowOption) => `<option value="${esc(windowOption.id)}" ${windowOption.id === clientOrderDraft.windowId ? 'selected' : ''}>${esc(windowOption.label)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="client-order-history-payment ${historical ? '' : 'hidden'}">
+          <label class="check-row">
+            <input id="client-order-paid" type="checkbox" ${clientOrderDraft.paid ? 'checked' : ''}>
+            <span><b>Comanda a fost achitată</b><small>Dacă rămâne nebifată, apare ca restanță în fișa clientului.</small></span>
+          </label>
+          <div class="field">
+            <label for="client-order-payment-method">Metoda de plată</label>
+            <select id="client-order-payment-method" ${clientOrderDraft.paid ? '' : 'disabled'}>
+              ${Object.entries(PAYMENT_LABELS).map(([value, label]) =>
+                `<option value="${value}" ${value === clientOrderDraft.paymentMethod ? 'selected' : ''}>${esc(label)}</option>`
+              ).join('')}
             </select>
           </div>
         </div>
@@ -1290,17 +1344,19 @@ function renderClientOrderForm() {
             const qty = Number(clientOrderDraft.quantities.get(product.id)) || 0;
             const minimum = Number(product.minQty) > 0 ? Number(product.minQty) : 1;
             const step = Number(product.step) > 0 ? Number(product.step) : 1;
+            const unavailableNow = !product.available || product.stockStatus === 'out_of_stock';
+            const inputStep = historical ? 0.01 : step;
             const search = normalizedClientOrderSearch(`${product.name} ${product.category || ''}`);
             return `
-              <div class="client-order-product ${restoredIds.has(product.id) ? 'selected' : ''}" data-reorder-product data-product-id="${esc(product.id)}" data-search="${esc(search)}">
+              <div class="client-order-product ${restoredIds.has(product.id) ? 'selected' : ''} ${historical && unavailableNow ? 'historical-unavailable' : ''}" data-reorder-product data-product-id="${esc(product.id)}" data-search="${esc(search)}">
                 <div class="client-order-product-info">
                   <b>${esc(product.name)}</b>
-                  <span>${esc(product.category || 'Alte produse')} · ${lei(Number(product.price))} / ${esc(product.unit)}</span>
-                  <small>Minim ${minimum} ${esc(product.unit)} · pas ${step} ${esc(product.unit)}</small>
+                  <span>${esc(product.category || 'Alte produse')} · ${lei(Number(product.price))} / ${esc(product.unit)}${historical && unavailableNow ? ' · indisponibil acum' : ''}</span>
+                  <small>${historical ? 'Cantitate liberă, maximum două zecimale' : `Minim ${minimum} ${esc(product.unit)} · pas ${step} ${esc(product.unit)}`}</small>
                 </div>
                 <div class="qty-row compact client-order-qty">
                   <button type="button" data-reorder-adjust data-direction="-1" aria-label="Scade ${esc(product.name)}">−</button>
-                  <input type="number" inputmode="decimal" min="0" max="10000" step="${step}" value="${qty || ''}" placeholder="0" data-reorder-qty data-product-id="${esc(product.id)}" aria-label="Cantitate ${esc(product.name)}">
+                  <input type="number" inputmode="decimal" min="${historical ? '0.01' : '0'}" max="10000" step="${inputStep}" value="${qty || ''}" placeholder="0" data-reorder-qty data-product-id="${esc(product.id)}" aria-label="Cantitate ${esc(product.name)}">
                   <button type="button" data-reorder-adjust data-direction="1" aria-label="Adaugă ${esc(product.name)}">+</button>
                 </div>
                 <strong class="client-order-line-total" data-reorder-line-total></strong>
@@ -1313,7 +1369,7 @@ function renderClientOrderForm() {
 
       <section class="client-order-section client-order-notes">
         <label for="client-order-notes"><b>Observații pentru livrare</b> <span class="optional">opțional</span></label>
-        <textarea id="client-order-notes" rows="2" maxlength="1000" placeholder="De exemplu: sunați la sosire">${esc(client.lastOrder?.notes || '')}</textarea>
+        <textarea id="client-order-notes" rows="2" maxlength="1000" placeholder="De exemplu: sunați la sosire">${esc(clientOrderDraft.notes || '')}</textarea>
       </section>
 
       <div id="client-order-error" role="alert"></div>
@@ -1328,7 +1384,7 @@ function renderClientOrderForm() {
         </div>
         <div class="client-order-submit-wrap">
           <button type="submit" class="btn btn-primary" id="client-order-submit">Plasează comanda</button>
-          <small>Clientul primește notificarea obișnuită de comandă primită.</small>
+          <small id="client-order-notification-note"></small>
         </div>
       </footer>
     </form>`;
@@ -1341,9 +1397,34 @@ function bindClientOrderForm() {
   const form = document.getElementById('client-order-form');
   if (!form || !clientOrderDraft) return;
   form.onsubmit = submitClientOrder;
+  form.querySelector('#client-order-historical').onchange = (event) => {
+    clientOrderDraft.notes = form.querySelector('#client-order-notes').value;
+    clientOrderDraft.date = form.querySelector('#client-order-date').value;
+    clientOrderDraft.historical = event.target.checked;
+    clientOrderDraft.showErrors = false;
+    if (clientOrderDraft.historical) {
+      const today = clientOrderRomaniaNow().date;
+      if (!clientOrderDraft.date || clientOrderDraft.date > today) clientOrderDraft.date = today;
+      for (const [productId, qty] of seedClientOrderQuantities(clientOrderDraft.client)) {
+        if (!clientOrderDraft.quantities.has(productId)) clientOrderDraft.quantities.set(productId, qty);
+      }
+    } else {
+      clientOrderDraft.paid = false;
+    }
+    const selectableIds = new Set(clientOrderProducts().map((product) => product.id));
+    clientOrderDraft.quantities = new Map(
+      [...clientOrderDraft.quantities].filter(([productId]) => selectableIds.has(productId))
+    );
+    renderClientOrderForm();
+  };
   form.querySelector('#client-order-zone').onchange = () => updateClientOrderSummary(true);
   form.querySelector('#client-order-window').onchange = () => updateClientOrderSummary(false);
   form.querySelector('#client-order-date').onchange = () => updateClientOrderSummary(false);
+  form.querySelector('#client-order-paid').onchange = () => updateClientOrderSummary(false);
+  form.querySelector('#client-order-payment-method').onchange = () => updateClientOrderSummary(false);
+  form.querySelector('#client-order-notes').oninput = (event) => {
+    clientOrderDraft.notes = event.target.value;
+  };
 
   form.querySelectorAll('[data-reorder-qty]').forEach((input) => {
     input.oninput = () => updateClientOrderSummary(true);
@@ -1353,8 +1434,12 @@ function bindClientOrderForm() {
       const row = button.closest('[data-reorder-product]');
       const product = clientOrderProducts().find((candidate) => candidate.id === row.dataset.productId);
       const input = row.querySelector('[data-reorder-qty]');
-      const minimum = Number(product.minQty) > 0 ? Number(product.minQty) : 1;
-      const step = Number(product.step) > 0 ? Number(product.step) : 1;
+      const minimum = clientOrderDraft.historical
+        ? 0.01
+        : (Number(product.minQty) > 0 ? Number(product.minQty) : 1);
+      const step = clientOrderDraft.historical
+        ? 0.01
+        : (Number(product.step) > 0 ? Number(product.step) : 1);
       const current = Number(input.value) || 0;
       const direction = Number(button.dataset.direction);
       const next = direction > 0
@@ -1377,10 +1462,12 @@ function bindClientOrderForm() {
     form.querySelector('#client-order-search-empty').classList.toggle('hidden', visible > 0);
   };
   form.querySelector('#client-order-clear').onclick = () => {
+    clientOrderDraft.notes = form.querySelector('#client-order-notes').value;
     clientOrderDraft.quantities = new Map();
     renderClientOrderForm();
   };
   form.querySelector('#client-order-restore').onclick = () => {
+    clientOrderDraft.notes = form.querySelector('#client-order-notes').value;
     clientOrderDraft.quantities = seedClientOrderQuantities(clientOrderDraft.client);
     renderClientOrderForm();
   };
@@ -1393,6 +1480,10 @@ function openClientOrder(client) {
   clientOrderDraft = {
     client,
     quantities: seedClientOrderQuantities(client),
+    historical: false,
+    paid: false,
+    paymentMethod: 'cash',
+    notes: client.lastOrder?.notes || '',
     zoneId: zones.some((zone) => zone.id === previousDelivery.zoneId)
       ? previousDelivery.zoneId
       : zones[0]?.id || '',
@@ -1475,6 +1566,9 @@ async function submitClientOrder(event) {
           date: draft.date,
         },
         notes: form.querySelector('#client-order-notes').value.trim(),
+        historical: draft.historical,
+        paid: draft.historical && draft.paid,
+        paymentMethod: draft.paymentMethod,
       }),
     });
     const data = await response.json().catch(() => ({}));
@@ -1494,7 +1588,9 @@ async function submitClientOrder(event) {
     draft.submitting = false;
     closeClientOrderDialog();
     await refreshAfterClientOrder();
-    showAdminToast(`✓ Comanda ${data.number} pentru ${clientName} a fost plasată cu succes.`);
+    showAdminToast(data.historical
+      ? `✓ Comanda ${data.number} pentru ${clientName} a fost adăugată în istoric ca livrată.`
+      : `✓ Comanda ${data.number} pentru ${clientName} a fost plasată cu succes.`);
   } catch (error) {
     draft.submitting = false;
     if (clientOrderDraft === draft) {
