@@ -370,6 +370,7 @@ function computeRange(range, fromStr, toStr) {
 const ORDERING_TIME_ZONE = 'Europe/Bucharest';
 const MAX_ORDER_ITEMS = 100;
 const MAX_ITEM_QTY = 10000;
+const MAX_UNIT_PRICE = 1000000;
 const TRACKING_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 
 function numberInRange(value, fallback, min, max) {
@@ -628,6 +629,7 @@ async function createOrder(req, res, options = {}) {
     ? new Map((await storage.listProducts()).map((product) => [product.id, product]))
     : null;
   let productLeadDays = 0;
+  let hasNegotiatedPricing = false;
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
@@ -687,13 +689,57 @@ async function createOrder(req, res, options = {}) {
         `Cantitatea pentru ${product.name} trebuie aleasă în pași de ${step} ${product.unit}.`
       );
     }
-    orderItems.push({
+    const catalogPrice = round2(product.price);
+    let unitPrice = catalogPrice;
+    let priceOverride = false;
+    if (options.allowCustomPricing && Object.prototype.hasOwnProperty.call(item, 'unitPrice')) {
+      const priceInputIsNumeric = typeof item.unitPrice === 'number'
+        || (typeof item.unitPrice === 'string' && item.unitPrice.trim() !== '');
+      const requestedPrice = priceInputIsNumeric ? Number(item.unitPrice) : NaN;
+      if (!Number.isFinite(requestedPrice) || requestedPrice < 0 || requestedPrice > MAX_UNIT_PRICE
+        || Math.abs(requestedPrice - round2(requestedPrice)) > 1e-8) {
+        return validationError(
+          res,
+          `items.${index}.unitPrice`,
+          `Prețul negociat pentru ${product.name} trebuie să fie între 0 și ${MAX_UNIT_PRICE} lei, cu cel mult două zecimale.`
+        );
+      }
+      unitPrice = round2(requestedPrice);
+      priceOverride = Math.abs(unitPrice - catalogPrice) > 1e-8;
+      hasNegotiatedPricing = hasNegotiatedPricing || priceOverride;
+    }
+    const orderItem = {
       productId: product.id, name: product.name, unit: product.unit,
-      price: product.price, qty: round2(qty),
-    });
+      price: unitPrice, qty: round2(qty),
+    };
+    if (options.allowCustomPricing) {
+      orderItem.catalogPrice = catalogPrice;
+      orderItem.priceOverride = priceOverride;
+    }
+    orderItems.push(orderItem);
     productLeadDays = Math.max(productLeadDays, Number(product.expectedDeliveryDays) || 0);
   }
   const subtotal = round2(orderItems.reduce((sum, item) => sum + item.price * item.qty, 0));
+
+  let discount = null;
+  let discountAmount = 0;
+  if (options.allowCustomPricing && req.body.discount != null && req.body.discount !== '') {
+    if (typeof req.body.discount !== 'object' || Array.isArray(req.body.discount)) {
+      return validationError(res, 'discount', 'Discountul nu este valid.');
+    }
+    const type = String(req.body.discount.type || '');
+    const rawValue = req.body.discount.value;
+    const valueIsNumeric = typeof rawValue === 'number'
+      || (typeof rawValue === 'string' && rawValue.trim() !== '');
+    const value = valueIsNumeric ? Number(rawValue) : NaN;
+    if (type !== 'percent' || !Number.isFinite(value) || value <= 0 || value > 100
+      || Math.abs(value - round2(value)) > 1e-8) {
+      return validationError(res, 'discount.value', 'Discountul procentual trebuie să fie între 0,01% și 100%, cu cel mult două zecimale.');
+    }
+    discount = { type: 'percent', value: round2(value) };
+    discountAmount = round2(subtotal * discount.value / 100);
+    hasNegotiatedPricing = true;
+  }
 
   const config = normalizeOrderingConfig(await storage.getSettings());
   const hasDeliveryObject = delivery != null;
@@ -732,7 +778,7 @@ async function createOrder(req, res, options = {}) {
       return validationError(res, 'delivery.date', 'Data livrării nu poate fi la mai mult de un an.');
     }
   }
-  if (!options.skipMinimumOrder && subtotal < zone.minOrder) {
+  if (!options.skipMinimumOrder && !hasNegotiatedPricing && subtotal < zone.minOrder) {
     return validationError(
       res,
       'items',
@@ -742,7 +788,7 @@ async function createOrder(req, res, options = {}) {
   }
 
   const deliveryFee = subtotal >= zone.freeDeliveryThreshold ? 0 : round2(zone.fee);
-  const total = round2(subtotal + deliveryFee);
+  const total = round2(subtotal + deliveryFee - discountAmount);
 
   const customerData = {
     name: parsedCustomer.name,
@@ -791,6 +837,8 @@ async function createOrder(req, res, options = {}) {
     createdAt: options.createdAt,
     status: options.initialStatus || 'noua',
     payment: options.payment || null,
+    discount,
+    discountAmount,
   });
   const trackingUrl = `/track/${tracking.token}`;
   const notificationTrackingUrl = buildNotificationTrackingUrl(req, trackingUrl);
@@ -805,6 +853,8 @@ async function createOrder(req, res, options = {}) {
     number: order.number,
     subtotal: order.subtotal,
     deliveryFee: order.deliveryFee,
+    discount: order.discount || null,
+    discountAmount: Number(order.discountAmount) || 0,
     total: order.total,
     deliveryDate,
     deliveryWindow: deliveryWindow.label,
@@ -1109,6 +1159,11 @@ function aggregateClients(orders, clientData) {
         name: item.name,
         unit: item.unit,
         qty: Number(item.qty),
+        ...(item.priceOverride === true ? {
+          price: Number(item.price),
+          catalogPrice: Number(item.catalogPrice),
+          priceOverride: true,
+        } : {}),
       })),
       delivery: {
         zoneId: order.delivery && order.delivery.zoneId || '',
@@ -1118,6 +1173,10 @@ function aggregateClients(orders, clientData) {
         location: order.delivery && order.delivery.location || null,
       },
       notes: order.customer.notes || '',
+      ...(order.discount ? {
+        discount: order.discount,
+        discountAmount: Number(order.discountAmount) || 0,
+      } : {}),
     };
     client.orders.push({
       id: order.id,
@@ -1239,6 +1298,7 @@ app.post('/api/admin/clients/:key/orders', requireAdmin, asyncRoute(async (req, 
     skipMinimumOrder: historical,
     allowUnavailableProducts: historical,
     allowFlexibleQuantities: historical,
+    allowCustomPricing: true,
     initialStatus: historical ? 'livrata' : 'noua',
     createdAt: historicalCreatedAt,
     payment,

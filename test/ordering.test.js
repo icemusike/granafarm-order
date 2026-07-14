@@ -42,7 +42,7 @@ function futureBusinessDate(businessDays) {
   return date.toISOString().slice(0, 10);
 }
 
-test('ordering API keeps pricing authoritative and tracking private', async (t) => {
+test('ordering API keeps public pricing authoritative, supports admin negotiated pricing, and keeps tracking private', async (t) => {
   const port = await availablePort();
   const dataDir = fs.mkdtempSync(path.join(projectRoot, '.ordering-test-'));
   const output = [];
@@ -127,8 +127,9 @@ test('ordering API keeps pricing authoritative and tracking private', async (t) 
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       customer,
-      items: [{ productId: product.id, qty: quantity }],
+      items: [{ productId: product.id, qty: quantity, unitPrice: 0.01 }],
       delivery: { zoneId: zone.id, windowId: deliveryWindow.id, date: deliveryDate, location: { lat: 45.7982, lng: 21.2089, formattedAddress: 'Timișoara' } },
+      discount: { type: 'percent', value: 99 },
       subtotal: 0.01,
       deliveryFee: 0,
       total: 0.01,
@@ -138,6 +139,8 @@ test('ordering API keeps pricing authoritative and tracking private', async (t) 
   const created = await createResponse.json();
   assert.equal(created.subtotal, expectedSubtotal);
   assert.equal(created.deliveryFee, expectedFee);
+  assert.equal(created.discount, null);
+  assert.equal(created.discountAmount, 0);
   assert.equal(created.total, Math.round((expectedSubtotal + expectedFee) * 100) / 100);
   assert.equal(created.canReorder, true);
   assert.match(created.trackingUrl, /^\/track\/[A-Za-z0-9_-]{43}$/);
@@ -161,6 +164,8 @@ test('ordering API keeps pricing authoritative and tracking private', async (t) 
   const database = JSON.parse(fs.readFileSync(path.join(dataDir, 'db.json'), 'utf8'));
   const storedOrder = database.orders.find((order) => order.number === created.number);
   assert.equal(storedOrder.trackingTokenHash.length, 64);
+  assert.equal(storedOrder.items[0].price, product.price);
+  assert.equal(Object.hasOwn(storedOrder.items[0], 'catalogPrice'), false);
   // trackingUrl se păstrează pe comandă pentru emailurile ulterioare de status
   // (confirmată / în livrare), care includ linkul de urmărire.
   assert.equal(storedOrder.trackingUrl, `/track/${token}`);
@@ -222,6 +227,95 @@ test('ordering API keeps pricing authoritative and tracking private', async (t) 
     reorderedOrder.items.map((item) => ({ productId: item.productId, qty: item.qty })),
     reorderPayload.items,
   );
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const negotiatedPrice = product.price === 0.01
+    ? 0
+    : Math.round((product.price - 0.01) * 100) / 100;
+  const negotiatedDiscount = 12.5;
+  const negotiatedPayload = {
+    items: [{ productId: product.id, qty: quantity, unitPrice: negotiatedPrice }],
+    discount: { type: 'percent', value: negotiatedDiscount },
+    delivery: { zoneId: zone.id, windowId: deliveryWindow.id, date: deliveryDate },
+    notes: 'Preț negociat pentru client recurent',
+  };
+  const negotiatedResponse = await fetch(
+    `${baseUrl}/api/admin/clients/${encodeURIComponent(client.key)}/orders`,
+    {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify(negotiatedPayload),
+    },
+  );
+  assert.equal(negotiatedResponse.status, 201);
+  const negotiated = await negotiatedResponse.json();
+  const negotiatedSubtotal = Math.round(negotiatedPrice * quantity * 100) / 100;
+  const negotiatedFee = negotiatedSubtotal >= zone.freeDeliveryThreshold ? 0 : zone.fee;
+  const negotiatedDiscountAmount = Math.round(negotiatedSubtotal * negotiatedDiscount) / 100;
+  const negotiatedTotal = Math.round(
+    (negotiatedSubtotal + negotiatedFee - negotiatedDiscountAmount) * 100
+  ) / 100;
+  assert.equal(negotiated.subtotal, negotiatedSubtotal);
+  assert.equal(negotiated.deliveryFee, negotiatedFee);
+  assert.deepEqual(negotiated.discount, { type: 'percent', value: negotiatedDiscount });
+  assert.equal(negotiated.discountAmount, negotiatedDiscountAmount);
+  assert.equal(negotiated.total, negotiatedTotal);
+
+  const ordersAfterNegotiated = await fetch(`${baseUrl}/api/admin/orders`, { headers: adminHeaders })
+    .then((response) => response.json());
+  const negotiatedOrder = ordersAfterNegotiated.find((order) => order.number === negotiated.number);
+  assert.deepEqual(negotiatedOrder.items, [{
+    productId: product.id,
+    name: product.name,
+    unit: product.unit,
+    price: negotiatedPrice,
+    qty: quantity,
+    catalogPrice: product.price,
+    priceOverride: true,
+  }]);
+  assert.deepEqual(negotiatedOrder.discount, { type: 'percent', value: negotiatedDiscount });
+  assert.equal(negotiatedOrder.discountAmount, negotiatedDiscountAmount);
+
+  const clientsAfterNegotiated = await fetch(`${baseUrl}/api/admin/clients`, { headers: adminHeaders })
+    .then((response) => response.json());
+  const negotiatedClient = clientsAfterNegotiated.find((entry) => entry.key === client.key);
+  assert.equal(negotiatedClient.lastOrder.number, negotiated.number);
+  assert.deepEqual(negotiatedClient.lastOrder.items, [{
+    productId: product.id,
+    name: product.name,
+    unit: product.unit,
+    qty: quantity,
+    price: negotiatedPrice,
+    catalogPrice: product.price,
+    priceOverride: true,
+  }]);
+  assert.deepEqual(negotiatedClient.lastOrder.discount, { type: 'percent', value: negotiatedDiscount });
+
+  const invalidNegotiatedPrice = await fetch(
+    `${baseUrl}/api/admin/clients/${encodeURIComponent(client.key)}/orders`,
+    {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({
+        ...reorderPayload,
+        items: [{ productId: product.id, qty: quantity, unitPrice: -1 }],
+      }),
+    },
+  );
+  assert.equal(invalidNegotiatedPrice.status, 400);
+
+  const invalidNegotiatedDiscount = await fetch(
+    `${baseUrl}/api/admin/clients/${encodeURIComponent(client.key)}/orders`,
+    {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({
+        ...reorderPayload,
+        discount: { type: 'percent', value: 100.01 },
+      }),
+    },
+  );
+  assert.equal(invalidNegotiatedDiscount.status, 400);
 
   await new Promise((resolve) => setTimeout(resolve, 100));
   const smsBeforeHistorical = await fetch(`${baseUrl}/api/admin/sms-log`, { headers: adminHeaders })

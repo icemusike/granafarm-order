@@ -362,6 +362,13 @@ function renderFilter() {
 
 let editingOrderId = null;
 
+function orderUnitPriceHtml(item) {
+  const price = Number(item.price);
+  const catalogPrice = Number(item.catalogPrice);
+  if (item.priceOverride !== true || !Number.isFinite(catalogPrice)) return lei(price);
+  return `<span class="negotiated-unit-price"><b>${lei(price)}</b><small>catalog <s>${lei(catalogPrice)}</s></small></span>`;
+}
+
 // Conținutul normal (doar citire) al detaliilor unei comenzi.
 function orderBodyHtml(o) {
   return `
@@ -371,7 +378,7 @@ function orderBodyHtml(o) {
             ${o.items.map((i) => `<tr>
               <td>${esc(i.name)}</td>
               <td class="num">${i.qty} ${esc(i.unit)}</td>
-              <td class="num">${lei(i.price)}</td>
+              <td class="num">${orderUnitPriceHtml(i)}</td>
               <td class="num">${lei(i.price * i.qty)}</td>
             </tr>`).join('')}
             ${o.discountAmount > 0 ? `
@@ -440,7 +447,7 @@ function orderEditHtml(o) {
             ${o.items.map((i, idx) => `<tr>
               <td>${esc(i.name)}</td>
               <td class="num" style="width:130px;"><input type="number" min="0" step="0.5" data-e-qty="${idx}" value="${i.qty}" style="width:90px; text-align:right;"> ${esc(i.unit)}</td>
-              <td class="num">${lei(i.price)} / ${esc(i.unit)}</td>
+              <td class="num">${orderUnitPriceHtml(i)} / ${esc(i.unit)}</td>
               <td class="num" data-e-sub="${idx}">${lei(i.price * i.qty)}</td>
             </tr>`).join('')}
             <tr><td colspan="3" style="font-weight:700;">Total nou</td><td class="num" style="font-weight:700;" data-e-total>${lei(o.total)}</td></tr>
@@ -1035,6 +1042,42 @@ function seedClientOrderQuantities(client) {
   return result;
 }
 
+function clientOrderCatalogPrice(product) {
+  const value = Number(product?.price);
+  return Number.isFinite(value) && value >= 0 ? roundQuantity(value) : 0;
+}
+
+function clientOrderUnitPrice(product) {
+  if (clientOrderDraft?.unitPrices?.has(product.id)) {
+    return Number(clientOrderDraft.unitPrices.get(product.id));
+  }
+  return clientOrderCatalogPrice(product);
+}
+
+function clientOrderPriceValid(value) {
+  const price = Number(value);
+  return Number.isFinite(price) && price >= 0 && price <= 1000000
+    && Math.abs(price - roundQuantity(price)) < 1e-8;
+}
+
+function seedClientOrderPricing(client) {
+  const unitPrices = new Map();
+  const available = clientOrderProducts();
+  for (const item of client.lastOrder?.items || []) {
+    if (item.priceOverride !== true || !clientOrderPriceValid(item.price)) continue;
+    const product = available.find((candidate) => candidate.id === item.productId)
+      || available.find((candidate) => candidate.name === item.name && candidate.unit === item.unit);
+    if (product) unitPrices.set(product.id, roundQuantity(item.price));
+  }
+  const previousDiscount = client.lastOrder?.discount;
+  const discountPercent = previousDiscount?.type === 'percent'
+    && clientOrderPriceValid(previousDiscount.value)
+    && Number(previousDiscount.value) <= 100
+    ? roundQuantity(previousDiscount.value)
+    : '';
+  return { unitPrices, discountPercent };
+}
+
 function normalizedClientOrderSearch(value) {
   return String(value || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
@@ -1109,20 +1152,45 @@ function clientOrderDateLabel(iso) {
 
 function clientOrderTotals() {
   const selected = clientOrderProducts()
-    .map((product) => ({ product, qty: Number(clientOrderDraft?.quantities.get(product.id)) }))
+    .map((product) => {
+      const catalogPrice = clientOrderCatalogPrice(product);
+      const unitPrice = clientOrderUnitPrice(product);
+      return {
+        product,
+        qty: Number(clientOrderDraft?.quantities.get(product.id)),
+        catalogPrice,
+        unitPrice,
+        priceOverride: clientOrderDraft?.unitPrices?.has(product.id)
+          && clientOrderPriceValid(unitPrice)
+          && Math.abs(unitPrice - catalogPrice) > 1e-8,
+      };
+    })
     .filter((line) => Number.isFinite(line.qty) && line.qty > 0);
-  const subtotal = Math.round(selected.reduce(
-    (sum, line) => sum + Number(line.product.price) * line.qty, 0
+  const catalogSubtotal = Math.round(selected.reduce(
+    (sum, line) => sum + line.catalogPrice * line.qty, 0
   ) * 100) / 100;
+  const subtotal = Math.round(selected.reduce(
+    (sum, line) => sum + (clientOrderPriceValid(line.unitPrice) ? line.unitPrice : 0) * line.qty, 0
+  ) * 100) / 100;
+  const rawDiscountPercent = Number(clientOrderDraft?.discountPercent);
+  const discountPercent = Number.isFinite(rawDiscountPercent) && rawDiscountPercent > 0
+    && rawDiscountPercent <= 100 && Math.abs(rawDiscountPercent - roundQuantity(rawDiscountPercent)) < 1e-8
+    ? rawDiscountPercent
+    : 0;
+  const discountAmount = Math.round(subtotal * discountPercent) / 100;
   const zone = clientOrderZone();
   const deliveryFee = zone && subtotal < Number(zone.freeDeliveryThreshold)
     ? Number(zone.fee) || 0
     : 0;
   return {
     selected,
+    catalogSubtotal,
     subtotal,
+    discountPercent,
+    discountAmount: Math.round(discountAmount * 100) / 100,
     deliveryFee: Math.round(deliveryFee * 100) / 100,
-    total: Math.round((subtotal + deliveryFee) * 100) / 100,
+    total: Math.round((subtotal + deliveryFee - discountAmount) * 100) / 100,
+    hasNegotiatedPricing: selected.some((line) => line.priceOverride) || discountPercent > 0,
   };
 }
 
@@ -1131,16 +1199,26 @@ function clientOrderValidation(earliest, maximum) {
   const historical = clientOrderDraft?.historical === true;
   const totals = clientOrderTotals();
   if (totals.selected.length === 0) errors.push('Adăugați cel puțin un produs.');
-  for (const { product, qty } of totals.selected) {
+  for (const { product, qty, unitPrice } of totals.selected) {
     if (!clientOrderQuantityValid(product, qty)) {
       errors.push(historical
         ? `Cantitatea pentru ${product.name} trebuie să fie pozitivă și să aibă cel mult două zecimale.`
         : `Cantitatea pentru ${product.name} nu respectă minimul sau pasul de comandă.`);
     }
+    if (clientOrderDraft?.unitPrices?.has(product.id) && !clientOrderPriceValid(unitPrice)) {
+      errors.push(`Prețul negociat pentru ${product.name} trebuie să fie între 0 și 1.000.000 lei, cu cel mult două zecimale.`);
+    }
+  }
+  const rawDiscount = clientOrderDraft?.discountPercent;
+  const discountValue = Number(rawDiscount);
+  if (rawDiscount !== '' && rawDiscount != null && discountValue !== 0
+    && (!Number.isFinite(discountValue) || discountValue < 0 || discountValue > 100
+      || Math.abs(discountValue - roundQuantity(discountValue)) > 1e-8)) {
+    errors.push('Discountul trebuie să fie între 0% și 100%, cu cel mult două zecimale.');
   }
   const zone = clientOrderZone();
   if (!zone) errors.push('Alegeți zona de livrare.');
-  else if (!historical && totals.subtotal < Number(zone.minOrder || 0)) {
+  else if (!historical && !totals.hasNegotiatedPricing && totals.subtotal < Number(zone.minOrder || 0)) {
     errors.push(`Comanda minimă pentru ${zone.name} este ${lei(Number(zone.minOrder))}.`);
   }
   if (!clientOrderDraft?.windowId) errors.push('Alegeți intervalul de livrare.');
@@ -1169,6 +1247,13 @@ function updateClientOrderSummary(resetDate = false) {
     if (Number.isFinite(value) && value > 0) clientOrderDraft.quantities.set(input.dataset.productId, value);
     else clientOrderDraft.quantities.delete(input.dataset.productId);
   });
+  form.querySelectorAll('[data-reorder-price]').forEach((input) => {
+    const rawValue = input.value.trim();
+    if (rawValue === '') clientOrderDraft.unitPrices.delete(input.dataset.productId);
+    else clientOrderDraft.unitPrices.set(input.dataset.productId, Number(rawValue));
+  });
+  clientOrderDraft.discountPercent = form.querySelector('#client-order-discount-percent')?.value
+    ?? clientOrderDraft.discountPercent;
   clientOrderDraft.zoneId = form.querySelector('#client-order-zone')?.value || '';
   clientOrderDraft.windowId = form.querySelector('#client-order-window')?.value || '';
   clientOrderDraft.historical = Boolean(form.querySelector('#client-order-historical')?.checked);
@@ -1195,9 +1280,21 @@ function updateClientOrderSummary(resetDate = false) {
     const product = clientOrderProducts().find((candidate) => candidate.id === row.dataset.productId);
     if (!product) return;
     const qty = Number(clientOrderDraft.quantities.get(product.id)) || 0;
+    const line = totals.selected.find((candidate) => candidate.product.id === product.id);
     row.classList.toggle('selected', qty > 0);
+    row.classList.toggle('has-custom-price', Boolean(line?.priceOverride));
+    const priceReset = row.querySelector('[data-reorder-price-reset]');
+    if (priceReset) priceReset.disabled = !clientOrderDraft.unitPrices.has(product.id);
     const lineTotal = row.querySelector('[data-reorder-line-total]');
-    lineTotal.textContent = qty > 0 ? lei(Math.round(Number(product.price) * qty * 100) / 100) : '';
+    if (!line || !clientOrderPriceValid(line.unitPrice)) {
+      lineTotal.textContent = '';
+    } else {
+      const effectiveTotal = Math.round(line.unitPrice * qty * 100) / 100;
+      const catalogTotal = Math.round(line.catalogPrice * qty * 100) / 100;
+      lineTotal.innerHTML = line.priceOverride
+        ? `<span>${lei(catalogTotal)}</span> ${lei(effectiveTotal)}`
+        : lei(effectiveTotal);
+    }
   });
 
   const zone = clientOrderZone();
@@ -1205,8 +1302,25 @@ function updateClientOrderSummary(resetDate = false) {
   document.getElementById('client-order-selected-count').textContent =
     `${count} ${count === 1 ? 'produs selectat' : 'produse selectate'}`;
   document.getElementById('client-order-subtotal').textContent = lei(totals.subtotal);
+  const discountRow = document.getElementById('client-order-discount-row');
+  discountRow.classList.toggle('hidden', totals.discountAmount <= 0);
+  document.getElementById('client-order-discount-label').textContent = totals.discountPercent > 0
+    ? `Discount ${String(totals.discountPercent).replace('.', ',')}%`
+    : 'Discount';
+  document.getElementById('client-order-discount').textContent = `−${lei(totals.discountAmount)}`;
   document.getElementById('client-order-fee').textContent = totals.deliveryFee > 0 ? lei(totals.deliveryFee) : 'Gratuită';
   document.getElementById('client-order-total').textContent = lei(totals.total);
+  const pricingResult = document.getElementById('client-order-pricing-result');
+  const directAdjustment = Math.round((totals.catalogSubtotal - totals.subtotal) * 100) / 100;
+  if (totals.hasNegotiatedPricing) {
+    const parts = [];
+    if (directAdjustment > 0) parts.push(`economie din prețuri negociate: ${lei(directAdjustment)}`);
+    else if (directAdjustment < 0) parts.push(`ajustare peste catalog: ${lei(Math.abs(directAdjustment))}`);
+    if (totals.discountAmount > 0) parts.push(`discount procentual: ${lei(totals.discountAmount)}`);
+    pricingResult.textContent = `Preț catalog produse: ${lei(totals.catalogSubtotal)}${parts.length ? ` · ${parts.join(' · ')}` : ''}.`;
+  } else {
+    pricingResult.textContent = 'Lăsați prețurile negociate și discountul goale pentru a folosi exact prețurile din catalog.';
+  }
   document.getElementById('client-order-date-help').textContent =
     clientOrderDraft.historical
       ? 'Puteți alege orice dată din trecut. Comanda va fi salvată direct ca livrată.'
@@ -1216,10 +1330,13 @@ function updateClientOrderSummary(resetDate = false) {
       ? `Livrare ${lei(Number(zone.fee))}; gratuită de la ${lei(Number(zone.freeDeliveryThreshold || 0))}.`
       : 'Livrare gratuită.')
     : '';
-  document.getElementById('client-order-minimum').textContent =
-    !clientOrderDraft.historical && zone && totals.subtotal < Number(zone.minOrder || 0)
-      ? `Mai adăugați produse de ${lei(Math.round((Number(zone.minOrder) - totals.subtotal) * 100) / 100)} pentru minimul zonei.`
-      : '';
+  const minimumNote = document.getElementById('client-order-minimum');
+  minimumNote.textContent = !clientOrderDraft.historical && zone && totals.subtotal < Number(zone.minOrder || 0)
+    ? (totals.hasNegotiatedPricing
+      ? 'Preț negociat: minimul zonei nu blochează această comandă administrativă.'
+      : `Mai adăugați produse de ${lei(Math.round((Number(zone.minOrder) - totals.subtotal) * 100) / 100)} pentru minimul zonei.`)
+    : '';
+  minimumNote.classList.toggle('negotiated', totals.hasNegotiatedPricing);
   const paymentMethod = document.getElementById('client-order-payment-method');
   if (paymentMethod) paymentMethod.disabled = !clientOrderDraft.paid;
   const notificationNote = document.getElementById('client-order-notification-note');
@@ -1257,6 +1374,9 @@ function renderClientOrderForm() {
   const zones = orderingConfig.deliveryZones || [];
   const windows = orderingConfig.deliveryWindows || [];
   const locationSaved = Boolean(client.lastOrder?.delivery?.location);
+  const discountPercent = clientOrderDraft.discountPercent == null
+    ? ''
+    : clientOrderDraft.discountPercent;
 
   document.getElementById('client-order-title').textContent = `Comandă nouă pentru ${client.name}`;
   document.getElementById('client-order-subtitle').textContent =
@@ -1330,8 +1450,23 @@ function renderClientOrderForm() {
       <section class="client-order-section">
         <div class="client-order-section-title client-order-products-title">
           <span class="client-order-step">2</span>
-          <div><h3>Produse și cantități</h3><p>Prețurile și disponibilitatea sunt cele curente.</p></div>
+          <div><h3>Produse, cantități și prețuri</h3><p>Puteți păstra catalogul, seta un preț negociat pe produs sau aplica un discount procentual.</p></div>
           <span id="client-order-selected-count" class="client-order-selected-count"></span>
+        </div>
+        <div class="client-order-pricing-panel">
+          <div>
+            <b>Discount pentru întreaga comandă</b>
+            <small>Opțional. Se aplică produselor după eventualele prețuri negociate introduse mai jos.</small>
+          </div>
+          <label for="client-order-discount-percent">
+            <span>Discount</span>
+            <span class="client-order-percent-input">
+              <input id="client-order-discount-percent" type="number" inputmode="decimal" min="0" max="100" step="0.01" value="${esc(String(discountPercent))}" placeholder="0">
+              <b>%</b>
+            </span>
+          </label>
+          <button type="button" class="btn-small" id="client-order-reset-pricing">Prețuri catalog</button>
+          <p id="client-order-pricing-result"></p>
         </div>
         <div class="client-order-product-tools">
           <input id="client-order-product-search" type="search" placeholder="🔍 Caută produs..." autocomplete="off">
@@ -1342,16 +1477,18 @@ function renderClientOrderForm() {
         <div class="client-order-products" id="client-order-products">
           ${available.map((product) => {
             const qty = Number(clientOrderDraft.quantities.get(product.id)) || 0;
+            const hasCustomPrice = clientOrderDraft.unitPrices.has(product.id);
+            const customPrice = hasCustomPrice ? clientOrderDraft.unitPrices.get(product.id) : '';
             const minimum = Number(product.minQty) > 0 ? Number(product.minQty) : 1;
             const step = Number(product.step) > 0 ? Number(product.step) : 1;
             const unavailableNow = !product.available || product.stockStatus === 'out_of_stock';
             const inputStep = historical ? 0.01 : step;
             const search = normalizedClientOrderSearch(`${product.name} ${product.category || ''}`);
             return `
-              <div class="client-order-product ${restoredIds.has(product.id) ? 'selected' : ''} ${historical && unavailableNow ? 'historical-unavailable' : ''}" data-reorder-product data-product-id="${esc(product.id)}" data-search="${esc(search)}">
+              <div class="client-order-product ${restoredIds.has(product.id) ? 'selected' : ''} ${hasCustomPrice ? 'has-custom-price' : ''} ${historical && unavailableNow ? 'historical-unavailable' : ''}" data-reorder-product data-product-id="${esc(product.id)}" data-search="${esc(search)}">
                 <div class="client-order-product-info">
                   <b>${esc(product.name)}</b>
-                  <span>${esc(product.category || 'Alte produse')} · ${lei(Number(product.price))} / ${esc(product.unit)}${historical && unavailableNow ? ' · indisponibil acum' : ''}</span>
+                  <span>${esc(product.category || 'Alte produse')} · catalog ${lei(Number(product.price))} / ${esc(product.unit)}${historical && unavailableNow ? ' · indisponibil acum' : ''}</span>
                   <small>${historical ? 'Cantitate liberă, maximum două zecimale' : `Minim ${minimum} ${esc(product.unit)} · pas ${step} ${esc(product.unit)}`}</small>
                 </div>
                 <div class="qty-row compact client-order-qty">
@@ -1359,6 +1496,14 @@ function renderClientOrderForm() {
                   <input type="number" inputmode="decimal" min="${historical ? '0.01' : '0'}" max="10000" step="${inputStep}" value="${qty || ''}" placeholder="0" data-reorder-qty data-product-id="${esc(product.id)}" aria-label="Cantitate ${esc(product.name)}">
                   <button type="button" data-reorder-adjust data-direction="1" aria-label="Adaugă ${esc(product.name)}">+</button>
                 </div>
+                <label class="client-order-product-price">
+                  <span>Preț negociat / ${esc(product.unit)}</span>
+                  <span class="client-order-price-input">
+                    <input type="number" inputmode="decimal" min="0" max="1000000" step="0.01" value="${esc(String(customPrice))}" placeholder="${esc(String(clientOrderCatalogPrice(product)))}" data-reorder-price data-product-id="${esc(product.id)}" aria-label="Preț negociat pentru ${esc(product.name)}">
+                    <b>lei</b>
+                  </span>
+                  <button type="button" data-reorder-price-reset data-product-id="${esc(product.id)}" ${hasCustomPrice ? '' : 'disabled'}>Folosește catalog</button>
+                </label>
                 <strong class="client-order-line-total" data-reorder-line-total></strong>
               </div>`;
           }).join('')}
@@ -1377,6 +1522,7 @@ function renderClientOrderForm() {
         <div>
           <dl>
             <div><dt>Produse</dt><dd id="client-order-subtotal">0,00 lei</dd></div>
+            <div id="client-order-discount-row" class="hidden"><dt id="client-order-discount-label">Discount</dt><dd id="client-order-discount">−0,00 lei</dd></div>
             <div><dt>Livrare</dt><dd id="client-order-fee">-</dd></div>
             <div class="grand"><dt>Total</dt><dd id="client-order-total">0,00 lei</dd></div>
           </dl>
@@ -1408,12 +1554,19 @@ function bindClientOrderForm() {
       for (const [productId, qty] of seedClientOrderQuantities(clientOrderDraft.client)) {
         if (!clientOrderDraft.quantities.has(productId)) clientOrderDraft.quantities.set(productId, qty);
       }
+      const restoredPricing = seedClientOrderPricing(clientOrderDraft.client);
+      for (const [productId, price] of restoredPricing.unitPrices) {
+        if (!clientOrderDraft.unitPrices.has(productId)) clientOrderDraft.unitPrices.set(productId, price);
+      }
     } else {
       clientOrderDraft.paid = false;
     }
     const selectableIds = new Set(clientOrderProducts().map((product) => product.id));
     clientOrderDraft.quantities = new Map(
       [...clientOrderDraft.quantities].filter(([productId]) => selectableIds.has(productId))
+    );
+    clientOrderDraft.unitPrices = new Map(
+      [...clientOrderDraft.unitPrices].filter(([productId]) => selectableIds.has(productId))
     );
     renderClientOrderForm();
   };
@@ -1425,9 +1578,22 @@ function bindClientOrderForm() {
   form.querySelector('#client-order-notes').oninput = (event) => {
     clientOrderDraft.notes = event.target.value;
   };
+  form.querySelector('#client-order-discount-percent').oninput = () => updateClientOrderSummary(false);
 
   form.querySelectorAll('[data-reorder-qty]').forEach((input) => {
     input.oninput = () => updateClientOrderSummary(true);
+  });
+  form.querySelectorAll('[data-reorder-price]').forEach((input) => {
+    input.oninput = () => updateClientOrderSummary(false);
+  });
+  form.querySelectorAll('[data-reorder-price-reset]').forEach((button) => {
+    button.onclick = () => {
+      const input = button.closest('[data-reorder-product]')?.querySelector('[data-reorder-price]');
+      if (input) input.value = '';
+      clientOrderDraft.unitPrices.delete(button.dataset.productId);
+      button.disabled = true;
+      updateClientOrderSummary(false);
+    };
   });
   form.querySelectorAll('[data-reorder-adjust]').forEach((button) => {
     button.onclick = () => {
@@ -1461,14 +1627,25 @@ function bindClientOrderForm() {
     });
     form.querySelector('#client-order-search-empty').classList.toggle('hidden', visible > 0);
   };
+  form.querySelector('#client-order-reset-pricing').onclick = () => {
+    clientOrderDraft.notes = form.querySelector('#client-order-notes').value;
+    clientOrderDraft.unitPrices = new Map();
+    clientOrderDraft.discountPercent = '';
+    renderClientOrderForm();
+  };
   form.querySelector('#client-order-clear').onclick = () => {
     clientOrderDraft.notes = form.querySelector('#client-order-notes').value;
     clientOrderDraft.quantities = new Map();
+    clientOrderDraft.unitPrices = new Map();
+    clientOrderDraft.discountPercent = '';
     renderClientOrderForm();
   };
   form.querySelector('#client-order-restore').onclick = () => {
     clientOrderDraft.notes = form.querySelector('#client-order-notes').value;
     clientOrderDraft.quantities = seedClientOrderQuantities(clientOrderDraft.client);
+    const restoredPricing = seedClientOrderPricing(clientOrderDraft.client);
+    clientOrderDraft.unitPrices = restoredPricing.unitPrices;
+    clientOrderDraft.discountPercent = restoredPricing.discountPercent;
     renderClientOrderForm();
   };
 }
@@ -1477,9 +1654,12 @@ function openClientOrder(client) {
   const zones = orderingConfig.deliveryZones || [];
   const windows = orderingConfig.deliveryWindows || [];
   const previousDelivery = client.lastOrder?.delivery || {};
+  const previousPricing = seedClientOrderPricing(client);
   clientOrderDraft = {
     client,
     quantities: seedClientOrderQuantities(client),
+    unitPrices: previousPricing.unitPrices,
+    discountPercent: previousPricing.discountPercent,
     historical: false,
     paid: false,
     paymentMethod: 'cash',
@@ -1559,7 +1739,14 @@ async function submitClientOrder(event) {
     const response = await api(`/api/admin/clients/${encodeURIComponent(draft.client.key)}/orders`, {
       method: 'POST',
       body: JSON.stringify({
-        items: totals.selected.map(({ product, qty }) => ({ productId: product.id, qty })),
+        items: totals.selected.map(({ product, qty, unitPrice }) => ({
+          productId: product.id,
+          qty,
+          ...(draft.unitPrices.has(product.id) ? { unitPrice } : {}),
+        })),
+        discount: totals.discountPercent > 0
+          ? { type: 'percent', value: totals.discountPercent }
+          : null,
         delivery: {
           zoneId: draft.zoneId,
           windowId: draft.windowId,
