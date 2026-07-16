@@ -1044,6 +1044,31 @@ function loadGoogleMaps(apiKey) {
   return window.__granaMapsPromise;
 }
 
+function hideBrokenPacContainers() {
+  document.querySelectorAll('.pac-container').forEach((el) => {
+    el.style.display = 'none';
+    el.remove();
+  });
+}
+
+function pacContainerShowsAuthError() {
+  return [...document.querySelectorAll('.pac-container')].some((el) => mapContainerShowsAuthError(el));
+}
+
+function watchPlacesAuthErrors() {
+  if (window.__granaPacWatcher) return;
+  window.__granaPacWatcher = true;
+  const check = () => {
+    if (state.mapsUnavailable) return;
+    if (!pacContainerShowsAuthError()) return;
+    hideBrokenPacContainers();
+    markMapsUnavailable('BillingNotEnabledMapError');
+  };
+  const observer = new MutationObserver(() => check());
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  window.setInterval(check, 800);
+}
+
 // Autocomplete Google Places pe câmpul de căutare a adresei: clientul caută
 // adresa, iar pinul, adresa și localitatea se completează automat.
 function setupMapSearch() {
@@ -1055,6 +1080,7 @@ function setupMapSearch() {
     return;
   }
   input.closest('.map-search-wrap')?.classList.remove('hidden');
+  watchPlacesAuthErrors();
 
   // Click pe sugestie: fără preventDefault pe mousedown, inputul pierde focusul
   // și lista se închide înainte ca selecția să se aplice.
@@ -1080,6 +1106,11 @@ function setupMapSearch() {
         fields: ['geometry', 'formatted_address', 'place_id', 'address_components'],
       });
       autocomplete.addListener('place_changed', async () => {
+        if (pacContainerShowsAuthError()) {
+          hideBrokenPacContainers();
+          markMapsUnavailable('BillingNotEnabledMapError');
+          return;
+        }
         const place = autocomplete.getPlace();
         if (!place || !place.geometry || !place.geometry.location) return;
         const point = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
@@ -1097,6 +1128,13 @@ function setupMapSearch() {
           $('delivery-map-status').textContent = 'Pinul a fost plasat pe adresa căutată, îl poți muta dacă e nevoie.';
         }
       });
+      // Dacă Places e blocat de billing, Google afișează un box de eroare în loc de sugestii.
+      window.setTimeout(() => {
+        if (pacContainerShowsAuthError()) {
+          hideBrokenPacContainers();
+          markMapsUnavailable('BillingNotEnabledMapError');
+        }
+      }, 1500);
     } catch (error) {
       attached = false;
       markMapsUnavailable(error.message || 'BillingNotEnabledMapError');

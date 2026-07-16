@@ -464,7 +464,7 @@
               <input id="gm-apiKey" type="text" placeholder="ex: AIzaSy...">
             </div>
           </div>
-          <p class="settings-desc" style="margin-top:12px;">Creați cheia în <a href="https://console.cloud.google.com/google/maps-apis" target="_blank" rel="noopener">Google Cloud Console</a>. Obligatoriu: (1) legați un <b>cont de facturare (Billing)</b> la proiect — fără asta harta afișează „Pagina nu poate încărca corect Google Maps", (2) activați <b>Maps JavaScript API</b>, <b>Places API</b> (și Places API New) și <b>Geocoding API</b>, (3) restricționați cheia la domeniul <code>comenzi.granafarm.ro</code>. Lăsați gol pentru a folosi variabila de mediu <code>GOOGLE_MAPS_BROWSER_API_KEY</code> de pe host (dacă există).</p>
+          <p class="settings-desc" style="margin-top:12px;">Creați cheia în <a href="https://console.cloud.google.com/google/maps-apis" target="_blank" rel="noopener">Google Cloud Console</a>. Obligatoriu: (1) legați un <b>cont de facturare (Billing)</b> la <b>același proiect</b> care deține cheia — fără asta apare „Pagina nu poate încărca corect Google Maps" în loc de sugestii de adrese, (2) activați <b>Maps JavaScript API</b>, <b>Places API</b> (și Places API New) și <b>Geocoding API</b>, (3) restricționați cheia la domeniul <code>comenzi.granafarm.ro</code>. Lăsați gol pentru a folosi variabila de mediu <code>GOOGLE_MAPS_BROWSER_API_KEY</code> de pe host (dacă există).</p>
           <div id="maps-msg"></div>
           <div class="actions">
             <button class="btn btn-primary" id="save-maps-btn">Salvează cheia Google Maps</button>
