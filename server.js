@@ -822,8 +822,8 @@ async function createOrder(req, res, options = {}) {
       placeId: String(delivery.location.placeId || '').trim().slice(0, 200),
     };
   } else if (config.maps.enabled && options.requireDeliveryLocation === true) {
-    // Pinul pe hartă este preferat, dar nu blochează comanda dacă Maps e
-    // indisponibil (ex. BillingNotEnabled). Adresa text rămâne obligatorie.
+    // Pinul pe hartă este opțional pe magazin; poate fi forțat doar explicit
+    // (ex. fluxuri interne). Adresa text rămâne obligatorie.
     return validationError(res, 'delivery.location', 'Alegeți pinul exact pentru livrare pe hartă.');
   }
   const tracking = generateTrackingToken();

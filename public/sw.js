@@ -10,7 +10,7 @@
  *     doar offline.
  */
 
-const CACHE = 'granafarm-v3';
+const CACHE = 'granafarm-v4';
 const PRECACHE = [
   '/',
   '/catalog.html',

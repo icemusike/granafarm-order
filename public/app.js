@@ -588,10 +588,7 @@ const validators = {
     if (!$('c-invoice').checked && !value) return '';
     return /^(RO)?\d{2,10}$/i.test(value) ? '' : 'Introdu un CUI valid, de exemplu RO12345678.';
   },
-  'c-location': () => {
-    if (!state.config.maps?.enabled || state.mapsUnavailable) return '';
-    return state.deliveryLocation ? '' : 'Alege pinul exact pentru livrare pe hartă.';
-  },
+  'c-location': () => '',
   'c-delivery-date': () => {
     const value = $('c-delivery-date').value;
     if (!value) return 'Alege data livrării.';
@@ -909,8 +906,8 @@ async function submitOrder(event) {
     zoneId: zone.id,
     windowId: $('c-window').value,
     date: $('c-delivery-date').value,
-    location: state.deliveryLocation,
   };
+  if (state.deliveryLocation) delivery.location = state.deliveryLocation;
 
   state.submitting = true;
   $('form-msg').innerHTML = '';
@@ -1059,8 +1056,17 @@ function setupMapSearch() {
   }
   input.closest('.map-search-wrap')?.classList.remove('hidden');
 
+  // Click pe sugestie: fără preventDefault pe mousedown, inputul pierde focusul
+  // și lista se închide înainte ca selecția să se aplice.
+  if (!window.__granaPacClickFix) {
+    window.__granaPacClickFix = true;
+    document.addEventListener('mousedown', (event) => {
+      if (event.target.closest('.pac-container')) event.preventDefault();
+    }, true);
+  }
+
   let attached = false;
-  input.addEventListener('focus', async () => {
+  const attach = async () => {
     if (attached || state.mapsUnavailable) return;
     attached = true;
     try {
@@ -1077,14 +1083,12 @@ function setupMapSearch() {
         const place = autocomplete.getPlace();
         if (!place || !place.geometry || !place.geometry.location) return;
         const point = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
-        // completăm adresa și localitatea din rezultat
         if (place.formatted_address) $('c-address').value = place.formatted_address;
         const cityComponent = (place.address_components || []).find((c) => c.types.includes('locality'))
           || (place.address_components || []).find((c) => c.types.includes('administrative_area_level_2'));
         if (cityComponent) $('c-city').value = cityComponent.long_name;
         validateField('c-address', true);
         validateField('c-city', true);
-        // deschidem harta și punem pinul exact pe locul găsit
         await openDeliveryMap();
         if (state.map && !state.mapsUnavailable) {
           state.map.setZoom(17);
@@ -1094,9 +1098,14 @@ function setupMapSearch() {
         }
       });
     } catch (error) {
+      attached = false;
       markMapsUnavailable(error.message || 'BillingNotEnabledMapError');
     }
-  }, { once: false });
+  };
+
+  input.addEventListener('focus', () => { void attach(); });
+  // Pregătim autocomplete-ul imediat, ca lista să fie gata la prima tastare.
+  void attach();
 }
 
 async function openDeliveryMap() {

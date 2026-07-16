@@ -389,6 +389,38 @@ h2 .step {
 .delivery-map-wrap { margin-top: .75rem; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; }
 .delivery-map { width: 100%; min-height: 320px; background: #edf2e7; }
 .admin-order-map { width: 100%; min-height: 250px; margin-top: .75rem; border-radius: 10px; overflow: hidden; }
+.map-search-wrap {
+  position: relative;
+  z-index: 30;
+  margin: 0.55rem 0 0.65rem;
+  overflow: visible;
+}
+.map-search-wrap input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+  background: #fff;
+}
+.map-search-wrap input:focus {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.13);
+}
+/* Lista Google Places trebuie să fie deasupra cardului de checkout (overflow/clip). */
+.pac-container {
+  z-index: 10000 !important;
+  pointer-events: auto !important;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 28px rgba(34, 48, 42, 0.16);
+  font-family: var(--font-body);
+}
+.pac-item { cursor: pointer; padding: 8px 12px; }
+.pac-item:hover { background: #f3faf4; }
+.pac-item-selected,
+.pac-item-selected:hover { background: #e8f5e9; }
 
 /* ------------------------------------------------------- bară coș sticky --- */
 
@@ -2013,7 +2045,7 @@ img.image-unavailable { background: linear-gradient(135deg, #e3eee5, #f8eee0); }
 .cart-empty h2 { justify-content: center; margin-top: 0; }
 
 .checkout-layout { grid-template-columns: minmax(0, 1fr) 330px; }
-.checkout-card { padding: 0; overflow: hidden; }
+.checkout-card { padding: 0; overflow: visible; }
 .checkout-card fieldset {
   margin: 0;
   padding: 24px;
