@@ -391,7 +391,7 @@ h2 .step {
 .admin-order-map { width: 100%; min-height: 250px; margin-top: .75rem; border-radius: 10px; overflow: hidden; }
 .map-search-wrap {
   position: relative;
-  z-index: 30;
+  z-index: 40;
   margin: 0.55rem 0 0.65rem;
   overflow: visible;
 }
@@ -408,19 +408,51 @@ h2 .step {
   border-color: var(--green);
   box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.13);
 }
-/* Lista Google Places trebuie să fie deasupra cardului de checkout (overflow/clip). */
-.pac-container {
-  z-index: 10000 !important;
-  pointer-events: auto !important;
-  border-radius: 10px;
+.map-search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  background: #fff;
   border: 1px solid var(--line);
-  box-shadow: 0 10px 28px rgba(34, 48, 42, 0.16);
-  font-family: var(--font-body);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(34, 48, 42, 0.16);
+  max-height: 260px;
+  overflow-y: auto;
 }
-.pac-item { cursor: pointer; padding: 8px 12px; }
-.pac-item:hover { background: #f3faf4; }
-.pac-item-selected,
-.pac-item-selected:hover { background: #e8f5e9; }
+.map-search-results li {
+  margin: 0;
+  padding: 0;
+}
+.map-search-results button {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  color: var(--charcoal);
+}
+.map-search-results button:hover,
+.map-search-results button:focus,
+.map-search-results li[aria-selected="true"] button {
+  background: #f3faf4;
+  outline: none;
+}
+.map-search-results .main-text { display: block; font-weight: 650; font-size: 0.92rem; }
+.map-search-results .secondary-text { display: block; color: var(--muted); font-size: 0.78rem; margin-top: 2px; }
+.map-search-results .map-search-empty,
+.map-search-results .map-search-status {
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
 
 /* ------------------------------------------------------- bară coș sticky --- */
 

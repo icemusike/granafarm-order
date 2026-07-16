@@ -1051,99 +1051,250 @@ function hideBrokenPacContainers() {
   });
 }
 
-function pacContainerShowsAuthError() {
-  return [...document.querySelectorAll('.pac-container')].some((el) => mapContainerShowsAuthError(el));
+function cityFromAddressComponents(components = []) {
+  const locality = components.find((c) => c.types.includes('locality'))
+    || components.find((c) => c.types.includes('administrative_area_level_2'))
+    || components.find((c) => c.types.includes('postal_town'));
+  return locality ? locality.long_name : '';
 }
 
-function watchPlacesAuthErrors() {
-  if (window.__granaPacWatcher) return;
-  window.__granaPacWatcher = true;
-  const check = () => {
-    if (state.mapsUnavailable) return;
-    if (!pacContainerShowsAuthError()) return;
-    hideBrokenPacContainers();
-    markMapsUnavailable('BillingNotEnabledMapError');
+async function applySelectedPlace(place) {
+  if (!place || !place.geometry || !place.geometry.location) return;
+  const point = {
+    lat: typeof place.geometry.location.lat === 'function'
+      ? place.geometry.location.lat()
+      : Number(place.geometry.location.lat),
+    lng: typeof place.geometry.location.lng === 'function'
+      ? place.geometry.location.lng()
+      : Number(place.geometry.location.lng),
   };
-  const observer = new MutationObserver(() => check());
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-  window.setInterval(check, 800);
+  if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return;
+
+  const formatted = place.formatted_address || place.name || '';
+  if (formatted) {
+    $('c-address').value = formatted;
+    const searchInput = $('map-search');
+    if (searchInput) searchInput.value = formatted;
+  }
+  const city = cityFromAddressComponents(place.address_components || []);
+  if (city) $('c-city').value = city;
+  validateField('c-address', true);
+  validateField('c-city', true);
+
+  // Pinul se salvează chiar dacă harta nu se poate deschide.
+  setDeliveryLocation({
+    ...point,
+    formattedAddress: formatted,
+    placeId: place.place_id || '',
+  });
+  $('delivery-map-status').textContent = 'Adresa a fost selectată. Poți ajusta pinul pe hartă dacă vrei.';
+
+  try {
+    await openDeliveryMap();
+    if (state.map && !state.mapsUnavailable) {
+      state.map.setZoom(17);
+      placeDeliveryMarker(point, false);
+      setDeliveryLocation({
+        ...point,
+        formattedAddress: formatted,
+        placeId: place.place_id || '',
+      });
+      $('delivery-map-status').textContent = 'Pinul a fost plasat pe adresa căutată, îl poți muta dacă e nevoie.';
+    }
+  } catch {
+    // Adresa text + coordonatele rămân salvate mai sus.
+  }
 }
 
-// Autocomplete Google Places pe câmpul de căutare a adresei: clientul caută
-// adresa, iar pinul, adresa și localitatea se completează automat.
-function setupMapSearch() {
+function renderAddressSuggestions(predictions, { status = '', empty = false } = {}) {
+  const list = $('map-search-results');
   const input = $('map-search');
-  if (!input) return;
-  const mapsConfig = state.config.maps || {};
-  if (!mapsConfig.enabled || !mapsConfig.apiKey || state.mapsUnavailable) {
-    input.closest('.map-search-wrap')?.classList.add('hidden');
+  if (!list || !input) return;
+  if (status) {
+    list.innerHTML = `<li class="map-search-status">${esc(status)}</li>`;
+    list.classList.remove('hidden');
+    input.setAttribute('aria-expanded', 'true');
     return;
   }
-  input.closest('.map-search-wrap')?.classList.remove('hidden');
-  watchPlacesAuthErrors();
-
-  // Click pe sugestie: fără preventDefault pe mousedown, inputul pierde focusul
-  // și lista se închide înainte ca selecția să se aplice.
-  if (!window.__granaPacClickFix) {
-    window.__granaPacClickFix = true;
-    document.addEventListener('mousedown', (event) => {
-      if (event.target.closest('.pac-container')) event.preventDefault();
-    }, true);
+  if (empty || !predictions.length) {
+    list.innerHTML = '<li class="map-search-empty">Nicio adresă găsită. Poți completa manual câmpurile de mai jos.</li>';
+    list.classList.remove('hidden');
+    input.setAttribute('aria-expanded', 'true');
+    return;
   }
+  list.innerHTML = predictions.map((prediction, index) => {
+    const main = prediction.structured_formatting?.main_text || prediction.description || '';
+    const secondary = prediction.structured_formatting?.secondary_text || '';
+    return `<li role="option" data-index="${index}" aria-selected="false">
+      <button type="button" data-place-id="${esc(prediction.place_id)}">
+        <span class="main-text">${esc(main)}</span>
+        ${secondary ? `<span class="secondary-text">${esc(secondary)}</span>` : ''}
+      </button>
+    </li>`;
+  }).join('');
+  list.classList.remove('hidden');
+  input.setAttribute('aria-expanded', 'true');
+}
 
-  let attached = false;
-  const attach = async () => {
-    if (attached || state.mapsUnavailable) return;
-    attached = true;
-    try {
-      const maps = await loadGoogleMaps(mapsConfig.apiKey);
-      if (!maps.places?.Autocomplete) {
-        markMapsUnavailable('Places API');
-        return;
-      }
-      const autocomplete = new maps.places.Autocomplete(input, {
-        componentRestrictions: { country: 'ro' },
-        fields: ['geometry', 'formatted_address', 'place_id', 'address_components'],
-      });
-      autocomplete.addListener('place_changed', async () => {
-        if (pacContainerShowsAuthError()) {
-          hideBrokenPacContainers();
-          markMapsUnavailable('BillingNotEnabledMapError');
-          return;
-        }
-        const place = autocomplete.getPlace();
-        if (!place || !place.geometry || !place.geometry.location) return;
-        const point = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
-        if (place.formatted_address) $('c-address').value = place.formatted_address;
-        const cityComponent = (place.address_components || []).find((c) => c.types.includes('locality'))
-          || (place.address_components || []).find((c) => c.types.includes('administrative_area_level_2'));
-        if (cityComponent) $('c-city').value = cityComponent.long_name;
-        validateField('c-address', true);
-        validateField('c-city', true);
-        await openDeliveryMap();
-        if (state.map && !state.mapsUnavailable) {
-          state.map.setZoom(17);
-          placeDeliveryMarker(point, false);
-          setDeliveryLocation({ ...point, formattedAddress: place.formatted_address || '', placeId: place.place_id || '' });
-          $('delivery-map-status').textContent = 'Pinul a fost plasat pe adresa căutată, îl poți muta dacă e nevoie.';
-        }
-      });
-      // Dacă Places e blocat de billing, Google afișează un box de eroare în loc de sugestii.
-      window.setTimeout(() => {
-        if (pacContainerShowsAuthError()) {
-          hideBrokenPacContainers();
-          markMapsUnavailable('BillingNotEnabledMapError');
-        }
-      }, 1500);
-    } catch (error) {
-      attached = false;
-      markMapsUnavailable(error.message || 'BillingNotEnabledMapError');
+function hideAddressSuggestions() {
+  const list = $('map-search-results');
+  const input = $('map-search');
+  if (list) {
+    list.innerHTML = '';
+    list.classList.add('hidden');
+  }
+  if (input) input.setAttribute('aria-expanded', 'false');
+}
+
+// Căutare adresă cu listă proprie (nu widgetul Google .pac-container),
+// ca selecția prin click/touch să fie mereu fiabilă.
+function setupMapSearch() {
+  const input = $('map-search');
+  const list = $('map-search-results');
+  const wrap = input?.closest('.map-search-wrap');
+  if (!input || !list || !wrap) return;
+
+  const mapsConfig = state.config.maps || {};
+  if (!mapsConfig.enabled || !mapsConfig.apiKey || state.mapsUnavailable) {
+    wrap.classList.add('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+
+  let autocompleteService = null;
+  let placesService = null;
+  let placesReady = false;
+  let activeIndex = -1;
+  let latestPredictions = [];
+  let searchTimer = null;
+  let requestSerial = 0;
+
+  const ensurePlaces = async () => {
+    if (placesReady || state.mapsUnavailable) return placesReady;
+    const maps = await loadGoogleMaps(mapsConfig.apiKey);
+    if (!maps.places?.AutocompleteService || !maps.places?.PlacesService) {
+      markMapsUnavailable('Places API');
+      return false;
     }
+    autocompleteService = new maps.places.AutocompleteService();
+    // PlacesService cere un nod DOM pentru atribuire; nu trebuie să fie vizibil.
+    const attribution = document.createElement('div');
+    attribution.hidden = true;
+    document.body.appendChild(attribution);
+    placesService = new maps.places.PlacesService(attribution);
+    placesReady = true;
+    return true;
   };
 
-  input.addEventListener('focus', () => { void attach(); });
-  // Pregătim autocomplete-ul imediat, ca lista să fie gata la prima tastare.
-  void attach();
+  const setActive = (index) => {
+    const items = [...list.querySelectorAll('li[data-index]')];
+    activeIndex = index;
+    items.forEach((item, i) => item.setAttribute('aria-selected', i === activeIndex ? 'true' : 'false'));
+  };
+
+  const selectPrediction = (prediction) => {
+    if (!prediction?.place_id || !placesService) return;
+    hideAddressSuggestions();
+    input.value = prediction.description || prediction.structured_formatting?.main_text || input.value;
+    $('delivery-map-status').textContent = 'Se încarcă adresa selectată…';
+    placesService.getDetails({
+      placeId: prediction.place_id,
+      fields: ['geometry', 'formatted_address', 'place_id', 'address_components', 'name'],
+    }, (place, status) => {
+      if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place) {
+        $('delivery-map-status').textContent = 'Adresa nu a putut fi încărcată. Completați manual câmpurile de mai jos.';
+        return;
+      }
+      void applySelectedPlace(place);
+    });
+  };
+
+  const runSearch = async (query) => {
+    const needle = String(query || '').trim();
+    if (needle.length < 3) {
+      hideAddressSuggestions();
+      return;
+    }
+    try {
+      if (!(await ensurePlaces())) return;
+    } catch (error) {
+      markMapsUnavailable(error.message || 'BillingNotEnabledMapError');
+      return;
+    }
+    const serial = ++requestSerial;
+    renderAddressSuggestions([], { status: 'Se caută adrese…' });
+    autocompleteService.getPlacePredictions({
+      input: needle,
+      componentRestrictions: { country: 'ro' },
+    }, (predictions, status) => {
+      if (serial !== requestSerial) return;
+      if (status === window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
+        latestPredictions = [];
+        renderAddressSuggestions([], { empty: true });
+        return;
+      }
+      if (status !== window.google.maps.places.PlacesServiceStatus.OK || !predictions?.length) {
+        if (status === 'REQUEST_DENIED' || String(status).includes('DENIED')) {
+          markMapsUnavailable('BillingNotEnabledMapError');
+          hideAddressSuggestions();
+          return;
+        }
+        latestPredictions = [];
+        renderAddressSuggestions([], { empty: true });
+        return;
+      }
+      latestPredictions = predictions.slice(0, 6);
+      activeIndex = -1;
+      renderAddressSuggestions(latestPredictions);
+    });
+  };
+
+  input.addEventListener('input', () => {
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => void runSearch(input.value), 220);
+  });
+
+  input.addEventListener('keydown', (event) => {
+    const items = [...list.querySelectorAll('li[data-index]')];
+    if (event.key === 'ArrowDown' && items.length) {
+      event.preventDefault();
+      setActive(Math.min(items.length - 1, activeIndex + 1));
+    } else if (event.key === 'ArrowUp' && items.length) {
+      event.preventDefault();
+      setActive(Math.max(0, activeIndex - 1));
+    } else if (event.key === 'Enter' && activeIndex >= 0 && latestPredictions[activeIndex]) {
+      event.preventDefault();
+      selectPrediction(latestPredictions[activeIndex]);
+    } else if (event.key === 'Escape') {
+      hideAddressSuggestions();
+    }
+  });
+
+  // pointerdown: funcționează pe mouse și touch, înainte de blur-ul inputului.
+  list.addEventListener('pointerdown', (event) => {
+    const button = event.target.closest('button[data-place-id]');
+    if (!button) return;
+    event.preventDefault();
+    const placeId = button.getAttribute('data-place-id');
+    const prediction = latestPredictions.find((item) => item.place_id === placeId)
+      || { place_id: placeId, description: button.querySelector('.main-text')?.textContent || '' };
+    selectPrediction(prediction);
+  });
+
+  document.addEventListener('pointerdown', (event) => {
+    if (!wrap.contains(event.target)) hideAddressSuggestions();
+  });
+
+  input.addEventListener('focus', () => {
+    void ensurePlaces().catch((error) => markMapsUnavailable(error.message || 'BillingNotEnabledMapError'));
+    if (latestPredictions.length && input.value.trim().length >= 3) {
+      renderAddressSuggestions(latestPredictions);
+    }
+  });
+
+  // Ascundem widgetul vechi Google dacă apare din greșeală.
+  hideBrokenPacContainers();
+  void ensurePlaces().catch(() => {});
 }
 
 async function openDeliveryMap() {
