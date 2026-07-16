@@ -421,7 +421,7 @@ function normalizeOrderingConfig(settings) {
       .map(Number)
       .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
   )].sort((a, b) => a - b);
-  const cutoffTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(raw.cutoffTime || ''))
+  const cutoffTime = /^(([01]\d|2[0-3]):[0-5]\d|24:00)$/.test(String(raw.cutoffTime || ''))
     ? String(raw.cutoffTime)
     : fallback.cutoffTime;
 
