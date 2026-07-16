@@ -27,6 +27,8 @@ const state = {
   deliveryLocation: null,
   map: null,
   mapMarker: null,
+  mapsUnavailable: false,
+  mapsError: '',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -586,7 +588,10 @@ const validators = {
     if (!$('c-invoice').checked && !value) return '';
     return /^(RO)?\d{2,10}$/i.test(value) ? '' : 'Introdu un CUI valid, de exemplu RO12345678.';
   },
-  'c-location': () => state.config.maps?.enabled && !state.deliveryLocation ? 'Alege pinul exact pentru livrare pe hartă.' : '',
+  'c-location': () => {
+    if (!state.config.maps?.enabled || state.mapsUnavailable) return '';
+    return state.deliveryLocation ? '' : 'Alege pinul exact pentru livrare pe hartă.';
+  },
   'c-delivery-date': () => {
     const value = $('c-delivery-date').value;
     if (!value) return 'Alege data livrării.';
@@ -978,17 +983,67 @@ function setDeliveryLocation(location) {
   updateSubmitState();
 }
 
+function mapsFailureMessage(detail = '') {
+  const lower = String(detail || '').toLowerCase();
+  if (lower.includes('billing') || lower.includes('factur')) {
+    return 'Google Maps nu funcționează: facturarea (Billing) nu este activă pe proiectul Google Cloud al cheii API. În Google Cloud Console → Billing, legați un cont de facturare, apoi activați Maps JavaScript API, Places API și Geocoding API. Până atunci puteți completa adresa text manual.';
+  }
+  return 'Google Maps nu a putut fi încărcat. Completați adresa text manual. Administratorul trebuie să verifice cheia API și facturarea în Google Cloud Console.';
+}
+
+function markMapsUnavailable(detail = '') {
+  state.mapsUnavailable = true;
+  state.mapsError = mapsFailureMessage(detail);
+  const hint = $('delivery-map-hint');
+  if (hint) hint.textContent = state.mapsError;
+  const status = $('delivery-map-status');
+  if (status) status.textContent = '';
+  $('map-search')?.closest('.map-search-wrap')?.classList.add('hidden');
+  const openBtn = $('open-delivery-map-btn');
+  if (openBtn) openBtn.disabled = true;
+  if (state.touched.has('c-location')) validateField('c-location', true);
+  updateSubmitState();
+}
+
+function mapContainerShowsAuthError(element) {
+  const text = String(element?.innerText || '').toLowerCase();
+  return text.includes('nu poate încărca corect google maps')
+    || text.includes("can't load google maps")
+    || text.includes('does not have permission');
+}
+
 function loadGoogleMaps(apiKey) {
+  if (state.mapsUnavailable) return Promise.reject(new Error(state.mapsError || mapsFailureMessage()));
   if (window.google?.maps) return Promise.resolve(window.google.maps);
   if (window.__granaMapsPromise) return window.__granaMapsPromise;
+
   window.__granaMapsPromise = new Promise((resolve, reject) => {
+    const fail = (detail) => {
+      markMapsUnavailable(detail);
+      window.__granaMapsPromise = null;
+      reject(new Error(state.mapsError));
+    };
+
+    // Google calls this when the key/project cannot authorize Maps.
+    window.gm_authFailure = () => fail('BillingNotEnabledMapError');
+
+    const callbackName = '__granaMapsReady';
+    window[callbackName] = () => {
+      if (!window.google?.maps) {
+        fail('Harta Google nu a putut fi încărcată.');
+        return;
+      }
+      resolve(window.google.maps);
+    };
+
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&language=ro&region=RO`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}`
+      + `&libraries=places&language=ro&region=RO&loading=async&callback=${callbackName}`;
     script.async = true;
-    script.onload = () => resolve(window.google.maps);
-    script.onerror = () => reject(new Error('Harta Google nu a putut fi încărcată.'));
+    script.onerror = () => fail('Harta Google nu a putut fi încărcată.');
     document.head.appendChild(script);
   });
+
   return window.__granaMapsPromise;
 }
 
@@ -998,7 +1053,7 @@ function setupMapSearch() {
   const input = $('map-search');
   if (!input) return;
   const mapsConfig = state.config.maps || {};
-  if (!mapsConfig.enabled || !mapsConfig.apiKey) {
+  if (!mapsConfig.enabled || !mapsConfig.apiKey || state.mapsUnavailable) {
     input.closest('.map-search-wrap')?.classList.add('hidden');
     return;
   }
@@ -1006,10 +1061,14 @@ function setupMapSearch() {
 
   let attached = false;
   input.addEventListener('focus', async () => {
-    if (attached) return;
+    if (attached || state.mapsUnavailable) return;
     attached = true;
     try {
       const maps = await loadGoogleMaps(mapsConfig.apiKey);
+      if (!maps.places?.Autocomplete) {
+        markMapsUnavailable('Places API');
+        return;
+      }
       const autocomplete = new maps.places.Autocomplete(input, {
         componentRestrictions: { country: 'ro' },
         fields: ['geometry', 'formatted_address', 'place_id', 'address_components'],
@@ -1027,15 +1086,15 @@ function setupMapSearch() {
         validateField('c-city', true);
         // deschidem harta și punem pinul exact pe locul găsit
         await openDeliveryMap();
-        if (state.map) {
+        if (state.map && !state.mapsUnavailable) {
           state.map.setZoom(17);
           placeDeliveryMarker(point, false);
           setDeliveryLocation({ ...point, formattedAddress: place.formatted_address || '', placeId: place.place_id || '' });
           $('delivery-map-status').textContent = 'Pinul a fost plasat pe adresa căutată, îl poți muta dacă e nevoie.';
         }
       });
-    } catch {
-      // fără autocomplete, câmpul rămâne un simplu text
+    } catch (error) {
+      markMapsUnavailable(error.message || 'BillingNotEnabledMapError');
     }
   }, { once: false });
 }
@@ -1044,6 +1103,10 @@ async function openDeliveryMap() {
   const mapsConfig = state.config.maps || {};
   if (!mapsConfig.enabled || !mapsConfig.apiKey) {
     $('delivery-map-hint').textContent = 'Harta va fi disponibilă după configurarea cheii Google Maps de către administrator.';
+    return;
+  }
+  if (state.mapsUnavailable) {
+    $('delivery-map-hint').textContent = state.mapsError || mapsFailureMessage('billing');
     return;
   }
   $('delivery-map-wrap').classList.remove('hidden');
@@ -1058,10 +1121,22 @@ async function openDeliveryMap() {
     }
     if (state.deliveryLocation) placeDeliveryMarker(state.deliveryLocation, false);
     $('delivery-map-status').textContent = state.deliveryLocation ? $('delivery-map-status').textContent : 'Apasă pe hartă pentru a plasa pinul.';
+
+    // BillingNotEnabled still constructs a Map shell; detect Google's error overlay.
+    window.setTimeout(() => {
+      if (state.mapsUnavailable) return;
+      if (mapContainerShowsAuthError($('delivery-map'))) {
+        markMapsUnavailable('BillingNotEnabledMapError');
+        $('delivery-map-wrap')?.classList.add('hidden');
+        state.map = null;
+        state.mapMarker = null;
+      }
+    }, 1200);
   } catch (error) {
-    $('delivery-map-hint').textContent = error.message;
+    markMapsUnavailable(error.message || 'BillingNotEnabledMapError');
+    $('delivery-map-wrap')?.classList.add('hidden');
   } finally {
-    $('open-delivery-map-btn').disabled = false;
+    if (!state.mapsUnavailable) $('open-delivery-map-btn').disabled = false;
   }
 }
 

@@ -2,15 +2,15 @@
  * Service worker GranaFarm, cache ușor pentru instalarea ca aplicație (PWA).
  *
  * Reguli:
- *   - API-ul și paginile private (urmărire, livrare) NU se pun niciodată
- *     în cache: datele de comenzi trebuie să fie mereu proaspete.
- *   - resursele statice (imagini, CSS, JS) folosesc cache-first, cu
- *     completare din rețea.
- *   - paginile HTML folosesc network-first, cu fallback din cache doar
- *     offline; panoul /admin nu se salvează deloc în cache.
+ *   - API-ul, panoul /admin (inclusiv admin.js) și paginile private
+ *     (urmărire, livrare) NU se pun niciodată în cache.
+ *   - resursele statice publice (imagini, CSS, JS magazin) folosesc
+ *     cache-first, cu completare din rețea.
+ *   - paginile HTML publice folosesc network-first, cu fallback din cache
+ *     doar offline.
  */
 
-const CACHE = 'granafarm-v1';
+const CACHE = 'granafarm-v3';
 const PRECACHE = [
   '/',
   '/catalog.html',
@@ -20,6 +20,14 @@ const PRECACHE = [
   '/favicon.png',
   '/manifest.webmanifest',
 ];
+
+function isAdminAsset(pathname) {
+  return pathname === '/admin'
+    || pathname.startsWith('/admin/')
+    || pathname === '/admin.html'
+    || pathname === '/admin.js'
+    || pathname === '/manifest-admin.webmanifest';
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -43,16 +51,17 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== location.origin) return;
 
-  // niciodată în cache: API, urmărire comandă, pagina șoferului
+  // niciodată în cache: API, admin, urmărire comandă, pagina șoferului
   if (url.pathname.startsWith('/api/')
     || url.pathname.startsWith('/track/')
-    || url.pathname.startsWith('/delivery/')) return;
+    || url.pathname.startsWith('/delivery/')
+    || isAdminAsset(url.pathname)) return;
 
   const isStatic = /\.(png|webp|jpg|jpeg|svg|ico|css|js|woff2?)$/.test(url.pathname)
     || url.pathname.endsWith('.webmanifest');
 
   if (isStatic && !url.pathname.endsWith('/sw.js')) {
-    // cache-first pentru resursele statice
+    // cache-first pentru resursele statice publice
     event.respondWith(
       caches.match(request).then((hit) => hit || fetch(request).then((response) => {
         if (response.ok) {
@@ -65,10 +74,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // network-first pentru pagini; /admin rămâne mereu doar din rețea
+  // network-first pentru pagini publice
   event.respondWith(
     fetch(request).then((response) => {
-      if (response.ok && !url.pathname.startsWith('/admin')) {
+      if (response.ok) {
         const copy = response.clone();
         caches.open(CACHE).then((cache) => cache.put(request, copy));
       }

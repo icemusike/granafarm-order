@@ -821,7 +821,9 @@ async function createOrder(req, res, options = {}) {
       formattedAddress: String(delivery.location.formattedAddress || '').trim().slice(0, 250),
       placeId: String(delivery.location.placeId || '').trim().slice(0, 200),
     };
-  } else if (config.maps.enabled && options.requireDeliveryLocation !== false) {
+  } else if (config.maps.enabled && options.requireDeliveryLocation === true) {
+    // Pinul pe hartă este preferat, dar nu blochează comanda dacă Maps e
+    // indisponibil (ex. BillingNotEnabled). Adresa text rămâne obligatorie.
     return validationError(res, 'delivery.location', 'Alegeți pinul exact pentru livrare pe hartă.');
   }
   const tracking = generateTrackingToken();
@@ -1455,7 +1457,12 @@ app.put('/api/admin/settings', requireAdmin, asyncRoute(async (req, res) => {
     if (!(key in body)) continue;
     if (type === 'number') next[key] = Number(body[key]);
     else if (type === 'object') {
-      if (body[key] && typeof body[key] === 'object') next[key] = { ...current[key], ...body[key] };
+      if (body[key] && typeof body[key] === 'object' && !Array.isArray(body[key])) {
+        const currentObject = current[key] && typeof current[key] === 'object' && !Array.isArray(current[key])
+          ? current[key]
+          : {};
+        next[key] = { ...currentObject, ...body[key] };
+      }
     } else {
       next[key] = String(body[key]).trim();
     }

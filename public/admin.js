@@ -940,9 +940,26 @@ function loadAdminGoogleMaps(apiKey) {
   if (window.google?.maps) return Promise.resolve(window.google.maps);
   if (window.__granaAdminMapsPromise) return window.__granaAdminMapsPromise;
   window.__granaAdminMapsPromise = new Promise((resolve, reject) => {
+    const callbackName = '__granaAdminMapsReady';
+    window.gm_authFailure = () => {
+      window.__granaAdminMapsPromise = null;
+      reject(new Error('BillingNotEnabledMapError'));
+    };
+    window[callbackName] = () => {
+      if (!window.google?.maps) {
+        window.__granaAdminMapsPromise = null;
+        reject(new Error('Harta nu a putut fi încărcată.'));
+        return;
+      }
+      resolve(window.google.maps);
+    };
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&language=ro&region=RO`;
-    script.async = true; script.onload = () => resolve(window.google.maps); script.onerror = reject;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&language=ro&region=RO&loading=async&callback=${callbackName}`;
+    script.async = true;
+    script.onerror = () => {
+      window.__granaAdminMapsPromise = null;
+      reject(new Error('Harta nu a putut fi încărcată.'));
+    };
     document.head.appendChild(script);
   });
   return window.__granaAdminMapsPromise;
@@ -2173,86 +2190,111 @@ const SETTINGS_FIELDS = ['companyName', 'cui', 'regCom', 'euid', 'ownerPhone', '
 
 function setStatusPill(id, active) {
   const el = document.getElementById(id);
+  if (!el) return;
   el.textContent = active ? 'Activ' : 'Inactiv';
   el.className = 'status-pill ' + (active ? 'on' : 'off');
 }
 
+function setFieldValue(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value;
+}
+
+function setFieldChecked(id, checked) {
+  const el = document.getElementById(id);
+  if (el) el.checked = Boolean(checked);
+}
+
+function setFieldHtml(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
+}
+
+function mapsKeyConfigured() {
+  const fromSettings = String((settings.maps || {}).apiKey || '').trim();
+  const fromConfig = String((orderingConfig.maps || {}).apiKey || '').trim();
+  return Boolean(fromSettings || fromConfig || (orderingConfig.maps && orderingConfig.maps.enabled));
+}
+
 function renderSettings() {
   for (const f of SETTINGS_FIELDS) {
-    const input = document.getElementById('s-' + f);
-    if (input) input.value = settings[f] ?? '';
+    setFieldValue('s-' + f, settings[f] ?? '');
   }
 
   const pm = settings.postmark || {};
-  document.getElementById('pm-enabled').checked = Boolean(pm.enabled);
-  document.getElementById('pm-apiToken').value = pm.apiToken || '';
-  document.getElementById('pm-fromEmail').value = pm.fromEmail || '';
-  document.getElementById('pm-fromName').value = pm.fromName || '';
+  setFieldChecked('pm-enabled', Boolean(pm.enabled));
+  setFieldValue('pm-apiToken', pm.apiToken || '');
+  setFieldValue('pm-fromEmail', pm.fromEmail || '');
+  setFieldValue('pm-fromName', pm.fromName || '');
   setStatusPill('postmark-status', settings.emailProvider === 'postmark');
 
-  document.getElementById('mk-enabled').checked = Boolean((settings.marketing || {}).enabled);
+  setFieldChecked('mk-enabled', Boolean((settings.marketing || {}).enabled));
 
   const tpl = settings.smsTemplates || {};
-  document.getElementById('tpl-ownerNewOrder').value = tpl.ownerNewOrder || '';
-  document.getElementById('tpl-clientConfirmed').value = tpl.clientConfirmed || '';
+  setFieldValue('tpl-ownerNewOrder', tpl.ownerNewOrder || '');
+  setFieldValue('tpl-clientConfirmed', tpl.clientConfirmed || '');
 
   const tw = settings.twilio || {};
-  document.getElementById('tw-enabled').checked = tw.enabled === true;
-  document.getElementById('tw-accountSid').value = tw.accountSid || '';
-  document.getElementById('tw-authToken').value = tw.authToken || '';
-  document.getElementById('tw-fromNumber').value = tw.fromNumber || '';
+  setFieldChecked('tw-enabled', tw.enabled === true);
+  setFieldValue('tw-accountSid', tw.accountSid || '');
+  setFieldValue('tw-authToken', tw.authToken || '');
+  setFieldValue('tw-fromNumber', tw.fromNumber || '');
   setStatusPill('twilio-status', settings.smsProvider === 'twilio');
-  document.getElementById('twilio-source-hint').innerHTML =
+  setFieldHtml('twilio-source-hint',
     settings.smsProvider === 'twilio'
       ? (settings.smsSource === 'settings'
         ? 'SMS-urile sunt <b>active</b>, folosind datele Twilio completate mai jos.'
         : 'SMS-urile sunt <b>active</b>, folosind variabilele de mediu Twilio setate pe host.')
       : (tw.enabled === true
         ? 'Comutatorul este pornit, dar SMS-urile rulează în <b>mod simulat</b>, completați datele Twilio pentru trimitere reală.'
-        : 'SMS-urile sunt <b>dezactivate</b> (mod simulat, doar în jurnal). Porniți comutatorul de mai jos după aprobarea numărului de expeditor.');
+        : 'SMS-urile sunt <b>dezactivate</b> (mod simulat, doar în jurnal). Porniți comutatorul de mai jos după aprobarea numărului de expeditor.'));
 
   // WhatsApp (integrare separată de SMS)
   const wa = settings.whatsapp || {};
   const waTemplates = wa.templates || {};
   const waReminder = wa.reminder || {};
-  document.getElementById('wa-enabled').checked = wa.enabled === true;
-  document.getElementById('wa-accountSid').value = wa.accountSid || '';
-  document.getElementById('wa-authToken').value = wa.authToken || '';
-  document.getElementById('wa-fromNumber').value = wa.fromNumber || '';
-  document.getElementById('wa-confirmations').checked = wa.confirmations !== false;
-  document.getElementById('wa-tpl-confirmed').value = waTemplates.clientConfirmed || '';
-  document.getElementById('wa-tpl-reminder').value = waTemplates.deliveryReminder || '';
-  document.getElementById('wa-rem-enabled').checked = waReminder.enabled === true;
-  document.getElementById('wa-rem-time').value = waReminder.time || '18:00';
+  setFieldChecked('wa-enabled', wa.enabled === true);
+  setFieldValue('wa-accountSid', wa.accountSid || '');
+  setFieldValue('wa-authToken', wa.authToken || '');
+  setFieldValue('wa-fromNumber', wa.fromNumber || '');
+  setFieldChecked('wa-confirmations', wa.confirmations !== false);
+  setFieldValue('wa-tpl-confirmed', waTemplates.clientConfirmed || '');
+  setFieldValue('wa-tpl-reminder', waTemplates.deliveryReminder || '');
+  setFieldChecked('wa-rem-enabled', waReminder.enabled === true);
+  setFieldValue('wa-rem-time', waReminder.time || '18:00');
   const reminderDays = (waReminder.days || []).map(Number);
   document.querySelectorAll('[data-wa-day]').forEach((box) => {
     box.checked = reminderDays.includes(Number(box.dataset.waDay));
   });
   setStatusPill('whatsapp-status', wa.enabled === true && Boolean(wa.accountSid && wa.authToken && wa.fromNumber));
-  document.getElementById('wa-rem-status').innerHTML = waReminder.lastSentDate
+  setFieldHtml('wa-rem-status', waReminder.lastSentDate
     ? `Ultima reamintire programată a fost trimisă pe <b>${new Date(waReminder.lastSentDate + 'T12:00:00').toLocaleDateString('ro-RO', { dateStyle: 'long' })}</b>.`
-    : 'Reamintirea programată nu a fost trimisă încă.';
+    : 'Reamintirea programată nu a fost trimisă încă.');
   const twaEl = document.getElementById('test-wa-to');
   if (twaEl && !twaEl.value) twaEl.value = settings.ownerPhone || '';
 
-  document.getElementById('gm-apiKey').value = (settings.maps || {}).apiKey || '';
-  setStatusPill('maps-status', Boolean(orderingConfig.maps && orderingConfig.maps.enabled));
+  setFieldValue('gm-apiKey', (settings.maps || {}).apiKey || '');
+  setStatusPill('maps-status', mapsKeyConfigured());
 
   const ef = settings.efactura || {};
-  document.getElementById('ef-enabled').checked = ef.enabled === true;
-  document.getElementById('ef-environment').value = ef.environment === 'prod' ? 'prod' : 'test';
-  document.getElementById('ef-clientId').value = ef.clientId || '';
-  document.getElementById('ef-clientSecret').value = ef.clientSecret || '';
-  document.getElementById('ef-accessToken').value = ef.accessToken || '';
+  setFieldChecked('ef-enabled', ef.enabled === true);
+  setFieldValue('ef-environment', ef.environment === 'prod' ? 'prod' : 'test');
+  setFieldValue('ef-clientId', ef.clientId || '');
+  setFieldValue('ef-clientSecret', ef.clientSecret || '');
+  setFieldValue('ef-accessToken', ef.accessToken || '');
   const redirectInput = document.getElementById('ef-redirectUri');
-  redirectInput.value = ef.redirectUri || '';
-  redirectInput.placeholder = location.origin + '/api/admin/efactura/callback';
+  if (redirectInput) {
+    redirectInput.value = ef.redirectUri || '';
+    redirectInput.placeholder = location.origin + '/api/admin/efactura/callback';
+  }
   const efPill = document.getElementById('efactura-status');
-  efPill.textContent = ef.enabled === true ? `Activă (${ef.environment === 'prod' ? 'producție' : 'test'})` : 'Neactivată';
-  efPill.className = 'status-pill ' + (ef.enabled === true ? 'on' : 'off');
+  if (efPill) {
+    efPill.textContent = ef.enabled === true ? `Activă (${ef.environment === 'prod' ? 'producție' : 'test'})` : 'Neactivată';
+    efPill.className = 'status-pill ' + (ef.enabled === true ? 'on' : 'off');
+  }
   renderEfacturaTokenStatus(ef);
 
-  document.getElementById('s-notificationEmails').value = settings.notificationEmails || '';
+  setFieldValue('s-notificationEmails', settings.notificationEmails || '');
 
   renderEmailTemplates();
 
@@ -2269,13 +2311,20 @@ async function saveSettingsPatch(payload, msgId, successMsg) {
   const data = await res.json();
   const msg = document.getElementById(msgId);
   if (!res.ok) {
-    msg.innerHTML = `<div class="msg msg-error">${esc(data.error)}</div>`;
-    return;
+    if (msg) msg.innerHTML = `<div class="msg msg-error">${esc(data.error || 'Salvarea a eșuat.')}</div>`;
+    return false;
   }
   settings = data;
-  renderSettings();
-  msg.innerHTML = `<div class="msg msg-success">${esc(successMsg)}</div>`;
-  setTimeout(() => (msg.innerHTML = ''), 3000);
+  try {
+    renderSettings();
+  } catch (error) {
+    console.error('renderSettings after save failed', error);
+  }
+  if (msg) {
+    msg.innerHTML = `<div class="msg msg-success">${esc(successMsg)}</div>`;
+    setTimeout(() => { if (msg) msg.innerHTML = ''; }, 3000);
+  }
+  return true;
 }
 
 async function saveCompanySettings() {
@@ -2404,6 +2453,7 @@ async function sendReminderNow() {
 // Starea token-ului SPV: prezent / lipsă, valabilitate, refresh automat.
 function renderEfacturaTokenStatus(ef) {
   const el = document.getElementById('ef-token-status');
+  if (!el) return;
   if (!ef.accessToken) {
     el.innerHTML = '🔑 <b>Fără token SPV.</b> Apăsați „Autorizează cu ANAF" după ce salvați Client ID și Client Secret.';
     return;
@@ -2496,15 +2546,31 @@ function handleEfacturaRedirectResult() {
 }
 
 async function saveMaps() {
-  await saveSettingsPatch(
-    { maps: { apiKey: document.getElementById('gm-apiKey').value.trim() } },
+  const input = document.getElementById('gm-apiKey');
+  const apiKey = input ? input.value.trim() : '';
+  const saved = await saveSettingsPatch(
+    { maps: { apiKey } },
     'maps-msg', 'Cheia Google Maps a fost salvată.'
   );
+  if (!saved) return;
+
   // pastila de status depinde de configurația publică, o reîmprospătăm
   try {
     const res = await fetch('/api/ordering-config', { cache: 'no-store' });
-    if (res.ok) { orderingConfig = await res.json(); renderSettings(); }
-  } catch { /* pastila se actualizează la următoarea încărcare */ }
+    if (res.ok) orderingConfig = await res.json();
+  } catch { /* pastila se actualizează din settings.maps mai jos */ }
+
+  // Chiar dacă /api/ordering-config întârzie, cheia din settings e suficientă
+  // pentru a marca Maps ca activ în panou.
+  if (apiKey && orderingConfig) {
+    orderingConfig.maps = {
+      ...(orderingConfig.maps || {}),
+      enabled: true,
+      apiKey,
+    };
+  }
+  setFieldValue('gm-apiKey', (settings.maps || {}).apiKey || apiKey);
+  setStatusPill('maps-status', mapsKeyConfigured());
 }
 
 // --- emailuri către client, per scenariu -----------------------------------
@@ -2519,8 +2585,10 @@ const EMAIL_SCENARIOS = [
 ];
 
 function renderEmailTemplates() {
+  const host = document.getElementById('email-templates');
+  if (!host) return;
   const et = settings.emailTemplates || {};
-  document.getElementById('email-templates').innerHTML = EMAIL_SCENARIOS.map(([key, title, hint]) => {
+  host.innerHTML = EMAIL_SCENARIOS.map(([key, title, hint]) => {
     const tpl = et[key] || {};
     return `
     <div class="email-tpl-block">
@@ -2545,8 +2613,11 @@ function renderEmailTemplates() {
   }).join('');
 
   EMAIL_SCENARIOS.forEach(([key]) => {
-    document.getElementById(`etpl-${key}-enabled`).onchange = (e) => {
-      document.getElementById(`etpl-${key}-fields`).classList.toggle('tpl-disabled', !e.target.checked);
+    const toggle = document.getElementById(`etpl-${key}-enabled`);
+    const fields = document.getElementById(`etpl-${key}-fields`);
+    if (!toggle || !fields) return;
+    toggle.onchange = (e) => {
+      fields.classList.toggle('tpl-disabled', !e.target.checked);
     };
   });
 }

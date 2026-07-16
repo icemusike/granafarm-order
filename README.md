@@ -56,9 +56,7 @@ Prețurile din catalog **includ TVA**. La emiterea facturii, aplicația defalcă
 
 ## Instalare și pornire
 
-Pentru harta de livrare, adaugă `GOOGLE_MAPS_BROWSER_API_KEY` în `.env`. Cheia
-este una de browser și trebuie restricționată prin HTTP referrer la domeniul
-aplicației (plus `http://localhost:*` pentru dezvoltare).
+Pentru harta de livrare, adaugă `GOOGLE_MAPS_BROWSER_API_KEY` în `.env` (sau din Admin → Integrări → Google Maps). Proiectul Google Cloud **trebuie să aibă Billing activ**; fără facturare apare `BillingNotEnabledMapError` / „Pagina nu poate încărca corect Google Maps". Activați Maps JavaScript API, Places API și Geocoding API, apoi restricționați cheia prin HTTP referrer la domeniul aplicației (plus `http://localhost:*` pentru dezvoltare).
 
 Necesită [Node.js](https://nodejs.org) versiunea 18 sau mai nouă.
 
